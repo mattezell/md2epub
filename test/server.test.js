@@ -225,3 +225,29 @@ test('convert: the generated cover can be turned off from the form', async () =>
   const off = await post(app, '/api/convert', form({ markdown: '# T\n\nx', generateCover: 'false' }));
   assert.equal(unzipSync(new Uint8Array(await off.arrayBuffer()))['EPUB/cover.xhtml'], undefined);
 });
+
+test('a request for diagrams the server cannot honour is reported, not dropped', async () => {
+  const app = createApp({ config: { renderDiagram: null, renderDiagrams: false, diagramsUnavailable: 'mermaid-cli is not installed' } });
+  const response = await post(app, '/api/convert', form({ markdown: '# T\n\n```mermaid\ngraph TD\n A-->B\n```\n', renderDiagrams: 'true' }));
+  assert.equal(response.status, 200);
+  const warnings = JSON.parse(decodeURIComponent(response.headers.get('x-md2epub-warnings')));
+  assert.match(warnings[0], /Diagrams were requested but not rendered: mermaid-cli is not installed/);
+});
+
+test('not asking for diagrams on such a server produces no noise', async () => {
+  const app = createApp({ config: { renderDiagram: null, renderDiagrams: false, diagramsUnavailable: 'no renderer' } });
+  const response = await post(app, '/api/convert', form({ markdown: '# T\n\n```mermaid\ngraph TD\n A-->B\n```\n', renderDiagrams: 'false' }));
+  assert.equal(response.headers.get('x-md2epub-warnings'), null);
+});
+
+test('health says why diagrams are unavailable, so the portal can explain', async () => {
+  const off = createApp({ config: { renderDiagram: null, renderDiagrams: false, diagramsUnavailable: 'mermaid-cli is not installed' } });
+  const body = await (await off.fetch(new Request('http://localhost/api/health'))).json();
+  assert.equal(body.diagrams, false);
+  assert.equal(body.diagramsUnavailable, 'mermaid-cli is not installed');
+
+  const on = createApp({ config: { renderDiagram: async () => null, renderDiagrams: true } });
+  const ready = await (await on.fetch(new Request('http://localhost/api/health'))).json();
+  assert.equal(ready.diagrams, true);
+  assert.equal(ready.diagramsUnavailable, null);
+});

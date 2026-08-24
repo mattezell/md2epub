@@ -11,6 +11,8 @@ const emailInput = document.getElementById('email');
 const emailStatus = document.getElementById('email-status');
 const remoteImagesRow = document.getElementById('remote-images-row');
 const diagramsRow = document.getElementById('diagrams-row');
+const diagramsNote = document.getElementById('diagrams-note');
+const diagramsToggle = document.getElementById('renderDiagrams');
 const result = document.getElementById('result');
 const resultTitle = document.getElementById('result-title');
 const resultBody = document.getElementById('result-body');
@@ -126,7 +128,7 @@ function buildFormData() {
   if (!document.getElementById('generateCover').checked) data.set('generateCover', 'false');
   // Explicit false, not a missing field: on a server where diagram rendering is
   // enabled, an absent field means "use the server default", which is on.
-  if (!document.getElementById('renderDiagrams').checked) data.set('renderDiagrams', 'false');
+  if (!diagramsToggle.checked) data.set('renderDiagrams', 'false');
   if (!document.getElementById('embedRemoteImages').checked) data.delete('embedRemoteImages');
   return data;
 }
@@ -262,8 +264,15 @@ fetch('/api/health')
       emailInput.disabled = true;
     }
     if (!health.remoteImages) remoteImagesRow.hidden = true;
-    // Only offer what this server can actually do.
-    if (!health.diagrams) diagramsRow.hidden = true;
+    // Left visible but disabled when the server cannot render: a control that
+    // simply vanishes is worse than one that says why it is unavailable.
+    if (!health.diagrams) {
+      diagramsToggle.checked = false;
+      diagramsToggle.disabled = true;
+      diagramsNote.textContent = health.diagramsUnavailable
+        ? `Unavailable: ${health.diagramsUnavailable}.`
+        : 'Unavailable on this server.';
+    }
   })
   .catch(() => {
     emailStatus.textContent = 'Could not reach the server to check email delivery.';

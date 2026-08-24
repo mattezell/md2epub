@@ -18,7 +18,7 @@ npm start                      # http://127.0.0.1:8787
 That is the whole download path. Email needs a few more lines of config, below.
 
 ```bash
-npm test                       # 118 tests: converter, API, guards and the portal itself
+npm test                       # 123 tests: converter, API, guards and the portal itself
 npm run epubcheck:install      # fetches EPUBCheck into tools/ (needs java + unzip)
 npm run diagrams:install       # optional: mermaid rendering (see Diagrams below)
 npm run validate               # converts every fixture and runs EPUBCheck over it
@@ -182,8 +182,15 @@ Rendered images are cached by content under `~/.cache/md2epub/diagrams`, and an
 identical diagram repeated across a folder of documents is rendered once. A
 first render costs about half a second; the cached path is about 40x faster.
 
-To enable it on the server, set `RENDER_DIAGRAMS=true`. Think before doing that
-on an exposed portal: every conversion then spawns a browser.
+The portal picks this up automatically: once the toolchain is installed, the
+server renders diagrams and the portal's checkbox becomes usable. Installing
+half a gigabyte is itself the opt in, so there is no second switch to find.
+`RENDER_DIAGRAMS=false` turns it off, which is worth considering on an exposed
+portal, since every conversion then spawns a browser.
+
+Where the server cannot render, the checkbox stays visible but disabled and
+says why, and a request that asks for diagrams anyway comes back with a warning
+rather than a book that quietly contains none.
 
 ## What the conversion does
 

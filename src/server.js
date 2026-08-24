@@ -46,11 +46,15 @@ async function readAsset(name) {
 
 export function createServerApp({ env = process.env, mailer } = {}) {
   const resolvedMailer = mailer === undefined ? buildMailer(env) : mailer;
-  // Rendering diagrams spawns a browser per conversion, so it stays off unless
-  // the environment asks for it. Worth thinking about before exposing the
-  // portal beyond localhost.
-  const wantsDiagrams = /^(1|true|yes|on)$/i.test(env.RENDER_DIAGRAMS || '');
-  const renderDiagram = wantsDiagrams ? createMermaidRenderer({ env }) : null;
+  // Installing the toolchain is itself the opt in: it is half a gigabyte and
+  // deliberately not a dependency, so nobody has it by accident. Requiring a
+  // second switch on top of that only produced silent no-ops.
+  // RENDER_DIAGRAMS=false turns it off where spawning a browser per conversion
+  // is not wanted, which is worth thinking about on an exposed portal.
+  const diagrams = diagramSupport(env);
+  const diagramsDisabled = /^(0|false|no|off)$/i.test(env.RENDER_DIAGRAMS || '');
+  const renderDiagram = !diagramsDisabled && diagrams.available ? createMermaidRenderer({ env }) : null;
+  const diagramsUnavailable = diagramsDisabled ? 'diagram rendering is switched off on this server (RENDER_DIAGRAMS=false)' : diagrams.reason;
   // Off only if explicitly disabled: without it a generated cover does not
   // show up on a Kindle at all.
   const rasterizeSvg = /^(0|false|no|off)$/i.test(env.RASTERIZE_COVER || '') ? null : createSvgRasterizer({ env });
@@ -70,6 +74,7 @@ export function createServerApp({ env = process.env, mailer } = {}) {
       emailHelp: EMAIL_SETUP_HINT,
       renderDiagram,
       renderDiagrams: Boolean(renderDiagram),
+      diagramsUnavailable,
       rasterizeSvg,
       fetchImage: createImageFetcher({ maxBytes: Number(env.MAX_IMAGE_BYTES || 12 * 1024 * 1024) }),
     },
@@ -88,13 +93,13 @@ export function createServerApp({ env = process.env, mailer } = {}) {
     });
   });
 
-  return { app, mailer: resolvedMailer, renderDiagram, rasterizeSvg };
+  return { app, mailer: resolvedMailer, renderDiagram, rasterizeSvg, diagramsUnavailable };
 }
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 
 if (isMain) {
-  const { app, mailer, renderDiagram, rasterizeSvg } = createServerApp();
+  const { app, mailer, renderDiagram, rasterizeSvg, diagramsUnavailable } = createServerApp();
   const port = Number(process.env.PORT || 8787);
   const hostname = process.env.HOST || '127.0.0.1';
 
@@ -102,10 +107,9 @@ if (isMain) {
     console.log(`[md2epub] listening on http://${hostname}:${info.port}`);
     console.log(`[md2epub] email: ${mailer ? `${mailer.kind}, ${mailer.describe()}` : 'not configured (download only)'}`);
     console.log(`[md2epub] covers: ${rasterizeSvg ? `drawn and rasterised via ${findChrome()}` : 'drawn as SVG (no browser found; Kindle will not show them)'}`);
-    if (/^(1|true|yes|on)$/i.test(process.env.RENDER_DIAGRAMS || '')) {
-      const support = diagramSupport();
-      console.log(`[md2epub] diagrams: ${renderDiagram ? `on, via ${support.chrome}` : `requested but unavailable (${support.reason})`}`);
-    }
+    // Always said, not only when switched on: a silent absence is what made
+    // this hard to work out from the outside.
+    console.log(`[md2epub] diagrams: ${renderDiagram ? `on, via ${findChrome()}` : `off, ${diagramsUnavailable}`}`);
     if (dev) console.log('[md2epub] dev mode: static files are re-read on every request');
   });
 }

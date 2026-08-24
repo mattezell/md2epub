@@ -213,3 +213,23 @@ test('page: the tabs decide which source the form sends', async () => {
   assert.equal(sent.get('markdown'), '# Pasted\n\nx');
   assert.equal(sent.has('file'), false);
 });
+
+test('page: the diagram control explains itself instead of vanishing', async () => {
+  const { doc } = await boot({
+    health: { ok: true, email: { configured: false }, remoteImages: false, diagrams: false, diagramsUnavailable: 'mermaid-cli is not installed' },
+  });
+  const row = $(doc, 'diagrams-row');
+  assert.equal(row.hidden, false, 'the control stays visible');
+  assert.equal($(doc, 'renderDiagrams').disabled, true);
+  assert.equal($(doc, 'renderDiagrams').checked, false);
+  assert.match($(doc, 'diagrams-note').textContent, /Unavailable: mermaid-cli is not installed/);
+});
+
+test('page: the diagram control is usable where the server can render', async () => {
+  const { doc } = await boot({
+    health: { ok: true, email: { configured: false }, remoteImages: false, diagrams: true },
+  });
+  assert.equal($(doc, 'renderDiagrams').disabled, false);
+  assert.equal($(doc, 'renderDiagrams').checked, true);
+  assert.equal($(doc, 'diagrams-note').textContent, '');
+});

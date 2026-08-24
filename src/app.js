@@ -15,6 +15,7 @@ const DEFAULTS = {
   emailsPerHour: 20,
   embedRemoteImages: false,
   renderDiagrams: false,
+  diagramsUnavailable: 'this server has no diagram renderer',
   // How to switch email on, in the words of whichever runtime is hosting this.
   emailHelp: '',
 };
@@ -119,6 +120,17 @@ async function readForm(c, config) {
   return { fields, markdown, cover, sourceName };
 }
 
+// Converts, and makes sure a request the server could not honour is reported
+// rather than quietly dropped.
+async function convert(markdown, fields, cover, config) {
+  const wantsDiagrams = bool(fields.renderDiagrams, config.renderDiagrams);
+  const result = await markdownToEpub(markdown, conversionOptions(fields, cover, config));
+  if (wantsDiagrams && !config.renderDiagram) {
+    result.warnings.unshift(`Diagrams were requested but not rendered: ${config.diagramsUnavailable}. The diagram source is shown as a code block.`);
+  }
+  return result;
+}
+
 function conversionOptions(fields, cover, config) {
   const title = String(fields.title || '').trim();
   return {
@@ -171,11 +183,12 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
       },
       remoteImages: Boolean(config.fetchImage),
       diagrams: Boolean(config.renderDiagram),
+      diagramsUnavailable: config.renderDiagram ? null : config.diagramsUnavailable,
     }));
 
   app.post('/api/convert', async (c) => {
     const { fields, markdown, cover } = await readForm(c, config);
-    const result = await markdownToEpub(markdown, conversionOptions(fields, cover, config));
+    const result = await convert(markdown, fields, cover, config);
     const headers = {
       'Content-Type': 'application/epub+zip',
       'Content-Disposition': `attachment; filename="${asciiFallback(result.filename)}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
@@ -210,7 +223,7 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
       throw new RequestError(`Too many emails from here. Try again in ${Math.ceil((gate.retryAfter || 3600) / 60)} minutes.`, 429);
     }
 
-    const result = await markdownToEpub(markdown, conversionOptions(fields, cover, config));
+    const result = await convert(markdown, fields, cover, config);
     const message = composeBookEmail(result, { note: fields.note, subject: fields.subject });
 
     try {

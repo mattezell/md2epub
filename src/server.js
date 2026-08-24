@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { buildMailer, loadEnv, EMAIL_SETUP_HINT } from './mail/factory.js';
 import { createImageFetcher } from './net.js';
+import { createMermaidRenderer, diagramSupport } from './diagrams.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(here, '..');
@@ -44,6 +45,11 @@ async function readAsset(name) {
 
 export function createServerApp({ env = process.env, mailer } = {}) {
   const resolvedMailer = mailer === undefined ? buildMailer(env) : mailer;
+  // Rendering diagrams spawns a browser per conversion, so it stays off unless
+  // the environment asks for it. Worth thinking about before exposing the
+  // portal beyond localhost.
+  const wantsDiagrams = /^(1|true|yes|on)$/i.test(env.RENDER_DIAGRAMS || '');
+  const renderDiagram = wantsDiagrams ? createMermaidRenderer({ env }) : null;
   const allowedRecipients = (env.MAIL_ALLOWED_RECIPIENTS || '')
     .split(',')
     .map((value) => value.trim())
@@ -58,6 +64,8 @@ export function createServerApp({ env = process.env, mailer } = {}) {
       maxCoverBytes: Number(env.MAX_COVER_BYTES || 12 * 1024 * 1024),
       embedRemoteImages: /^(1|true|yes|on)$/i.test(env.EMBED_REMOTE_IMAGES || ''),
       emailHelp: EMAIL_SETUP_HINT,
+      renderDiagram,
+      renderDiagrams: Boolean(renderDiagram),
       fetchImage: createImageFetcher({ maxBytes: Number(env.MAX_IMAGE_BYTES || 12 * 1024 * 1024) }),
     },
   });
@@ -75,19 +83,23 @@ export function createServerApp({ env = process.env, mailer } = {}) {
     });
   });
 
-  return { app, mailer: resolvedMailer };
+  return { app, mailer: resolvedMailer, renderDiagram };
 }
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 
 if (isMain) {
-  const { app, mailer } = createServerApp();
+  const { app, mailer, renderDiagram } = createServerApp();
   const port = Number(process.env.PORT || 8787);
   const hostname = process.env.HOST || '127.0.0.1';
 
   serve({ fetch: app.fetch, port, hostname }, (info) => {
     console.log(`[md2epub] listening on http://${hostname}:${info.port}`);
     console.log(`[md2epub] email: ${mailer ? `${mailer.kind}, ${mailer.describe()}` : 'not configured (download only)'}`);
+    if (/^(1|true|yes|on)$/i.test(process.env.RENDER_DIAGRAMS || '')) {
+      const support = diagramSupport();
+      console.log(`[md2epub] diagrams: ${renderDiagram ? `on, via ${support.chrome}` : `requested but unavailable (${support.reason})`}`);
+    }
     if (dev) console.log('[md2epub] dev mode: static files are re-read on every request');
   });
 }

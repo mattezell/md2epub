@@ -10,6 +10,7 @@ const emailBtn = document.getElementById('email-btn');
 const emailInput = document.getElementById('email');
 const emailStatus = document.getElementById('email-status');
 const remoteImagesRow = document.getElementById('remote-images-row');
+const diagramsRow = document.getElementById('diagrams-row');
 const result = document.getElementById('result');
 const resultTitle = document.getElementById('result-title');
 const resultBody = document.getElementById('result-body');
@@ -123,6 +124,9 @@ function buildFormData() {
   if (file && file.size === 0) data.delete('file');
   if (!document.getElementById('typographer').checked) data.set('typographer', 'false');
   if (!document.getElementById('generateCover').checked) data.set('generateCover', 'false');
+  // Explicit false, not a missing field: on a server where diagram rendering is
+  // enabled, an absent field means "use the server default", which is on.
+  if (!document.getElementById('renderDiagrams').checked) data.set('renderDiagrams', 'false');
   if (!document.getElementById('embedRemoteImages').checked) data.delete('embedRemoteImages');
   return data;
 }
@@ -198,11 +202,13 @@ form.addEventListener('submit', (event) => {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     const chapters = response.headers.get('X-Md2Epub-Chapters');
     const documents = response.headers.get('X-Md2Epub-Documents');
+    const diagrams = Number(response.headers.get('X-Md2Epub-Diagrams') || 0);
     const from = documents && documents !== '1' ? ` from ${documents} documents` : '';
+    const drawn = diagrams ? `, ${diagrams} diagram${diagrams === 1 ? '' : 's'} rendered` : '';
     report({
       ok: true,
       title: 'EPUB ready',
-      message: `${name}, ${(blob.size / 1024).toFixed(1)} KB, ${chapters || '1'} chapter${chapters === '1' ? '' : 's'}${from}. Check your downloads.`,
+      message: `${name}, ${(blob.size / 1024).toFixed(1)} KB, ${chapters || '1'} chapter${chapters === '1' ? '' : 's'}${from}${drawn}. Check your downloads.`,
       warnings: warningsFrom(response),
     });
   });
@@ -256,6 +262,8 @@ fetch('/api/health')
       emailInput.disabled = true;
     }
     if (!health.remoteImages) remoteImagesRow.hidden = true;
+    // Only offer what this server can actually do.
+    if (!health.diagrams) diagramsRow.hidden = true;
   })
   .catch(() => {
     emailStatus.textContent = 'Could not reach the server to check email delivery.';

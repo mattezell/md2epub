@@ -14,6 +14,7 @@ const DEFAULTS = {
   allowedRecipients: [],   // empty means any address
   emailsPerHour: 20,
   embedRemoteImages: false,
+  renderDiagrams: false,
   // How to switch email on, in the words of whichever runtime is hosting this.
   emailHelp: '',
 };
@@ -134,6 +135,7 @@ function conversionOptions(fields, cover, config) {
     generateCover: bool(fields.generateCover, true),
     embedRemoteImages: bool(fields.embedRemoteImages, config.embedRemoteImages) && Boolean(config.fetchImage),
     fetchImage: config.fetchImage,
+    renderDiagram: bool(fields.renderDiagrams, config.renderDiagrams) ? config.renderDiagram : undefined,
     cover,
   };
 }
@@ -167,6 +169,7 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
         emailsPerHour: config.emailsPerHour,
       },
       remoteImages: Boolean(config.fetchImage),
+      diagrams: Boolean(config.renderDiagram),
     }));
 
   app.post('/api/convert', async (c) => {
@@ -180,6 +183,7 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
       'X-Md2Epub-Title': encodeURIComponent(result.metadata.title),
       'X-Md2Epub-Chapters': String(result.chapterCount),
       'X-Md2Epub-Documents': String(result.documentCount),
+      'X-Md2Epub-Diagrams': String(result.diagramCount || 0),
     };
     const warnings = warningsHeader(result.warnings);
     if (warnings) headers['X-Md2Epub-Warnings'] = warnings;

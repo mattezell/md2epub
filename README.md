@@ -18,7 +18,7 @@ npm start                      # http://127.0.0.1:8787
 That is the whole download path. Email needs a few more lines of config, below.
 
 ```bash
-npm test                       # 123 tests: converter, API, guards and the portal itself
+npm test                       # 144 tests: converter, API, guards, web input and the portal
 npm run epubcheck:install      # fetches EPUBCheck into tools/ (needs java + unzip)
 npm run diagrams:install       # optional: mermaid rendering (see Diagrams below)
 npm run validate               # converts every fixture and runs EPUBCheck over it
@@ -124,6 +124,33 @@ curl -F "markdown=# Hello
 World." http://127.0.0.1:8787/api/convert -o hello.epub
 curl -F "file=@book.md" -F "email=me@example.com" http://127.0.0.1:8787/api/email
 ```
+
+## Web pages and the read-later queue
+
+A saved page is mostly navigation, so a URL is run through Readability first and
+the article that comes out joins the same pipeline a Markdown document does:
+chapter splitting, a table of contents, images embedded (with the same guarded
+fetch, so a pasted URL cannot probe the private network).
+
+```bash
+md2epub https://example.com/an-article --kindle
+md2epub https://a.example/one https://b.example/two --title "Saved Articles" --kindle
+md2epub --karakeep --limit 10 --kindle
+```
+
+`--karakeep` builds a book from the read-later queue (`KARAKEEP_URL` and
+`KARAKEEP_API_KEY`), newest first, and after a **successful** send tags each
+bookmark `epubbed` so the next run does not repeat it. `--no-mark` leaves the
+queue untouched, `--require-tag`/`--skip-tag` select differently, `--no-images`
+keeps the book small. A send is refused above 45 MB, since Amazon's limit is 50.
+
+The portal has the same thing under "From the web": paste URLs, or tick the
+read-later box. Both appear only when the server can do them.
+
+Note the crawled article for a bookmark is not inline on the listing:
+`content.htmlContent` comes back empty and the text lives in a
+`linkHtmlContent` asset, fetched separately. What that asset holds is already
+Readability-extracted, so it skips the extraction pass.
 
 ## Several documents, one book
 
@@ -270,6 +297,8 @@ src/server.js Node entry: static files, .env, SMTP
 src/worker.js Cloudflare entry: assets binding, HTTP mail
 src/cli.js    command line
 src/mail/     transports (SMTP, HTTP, dry run) and the shared message body
+src/article.js   web pages: extraction and HTML to Markdown
+src/karakeep.js  the read-later queue as input
 src/chrome.js    finding and driving the local browser
 src/diagrams.js  mermaid rendering through it
 public/       the portal, no build step

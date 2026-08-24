@@ -51,14 +51,19 @@ const fixtures = (await readdir(fixturesDir)).filter((name) => name.endsWith('.m
 const cases = [
   ...fixtures.map((name) => ({ name, cover: false })),
   { name: 'kitchen-sink.md', cover: true },
+  // Every fixture as one bundled book: exercises cross document links, shared
+  // heading ids and the nested table of contents.
+  { name: fixtures, cover: false, label: 'all-as-one-bundle' },
 ];
 const coverBytes = new Uint8Array(await readFile(join(fixturesDir, 'local-image.png')));
 let failures = 0;
 
 for (const testCase of cases) {
-  const fixture = testCase.name;
-  const markdown = await readFile(join(fixturesDir, fixture), 'utf8');
-  const label = basename(fixture, '.md') + (testCase.cover ? '-with-cover' : '');
+  const bundle = Array.isArray(testCase.name);
+  const markdown = bundle
+    ? await Promise.all(testCase.name.map(async (name) => ({ path: name, markdown: await readFile(join(fixturesDir, name), 'utf8') })))
+    : await readFile(join(fixturesDir, testCase.name), 'utf8');
+  const label = testCase.label || basename(testCase.name, '.md') + (testCase.cover ? '-with-cover' : '');
   let epubPath;
   try {
     const result = await markdownToEpub(markdown, {
@@ -69,7 +74,7 @@ for (const testCase of cases) {
     });
     epubPath = join(outDir, `${label}.epub`);
     await writeFile(epubPath, result.bytes);
-    process.stdout.write(`${label.padEnd(16)} ${String(result.chapterCount).padStart(2)} ch  ${String(Math.round(result.bytes.length / 1024)).padStart(4)} KB  `);
+    process.stdout.write(`${label.padEnd(24)} ${String(result.documentCount).padStart(2)} doc ${String(result.chapterCount).padStart(2)} ch ${String(Math.round(result.bytes.length / 1024)).padStart(4)} KB  `);
   } catch (err) {
     console.log(`${label.padEnd(16)} CONVERSION FAILED: ${err.message}`);
     failures += 1;

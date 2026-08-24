@@ -1,0 +1,255 @@
+// Portal front end. No framework, no build step.
+
+const form = document.getElementById('convert-form');
+const textarea = document.getElementById('markdown');
+const fileInput = document.getElementById('file');
+const dropzone = document.getElementById('dropzone');
+const fileName = document.getElementById('file-name');
+const downloadBtn = document.getElementById('download-btn');
+const emailBtn = document.getElementById('email-btn');
+const emailInput = document.getElementById('email');
+const emailStatus = document.getElementById('email-status');
+const remoteImagesRow = document.getElementById('remote-images-row');
+const result = document.getElementById('result');
+const resultTitle = document.getElementById('result-title');
+const resultBody = document.getElementById('result-body');
+const resultWarnings = document.getElementById('result-warnings');
+const pasteStats = document.getElementById('paste-stats');
+
+let activePane = 'paste';
+
+function showPane(name) {
+  activePane = name;
+  for (const tab of document.querySelectorAll('.tab')) {
+    const on = tab.dataset.pane === name;
+    tab.classList.toggle('is-active', on);
+    tab.setAttribute('aria-selected', String(on));
+  }
+  for (const pane of document.querySelectorAll('.pane')) {
+    pane.classList.toggle('is-active', pane.id === `pane-${name}`);
+  }
+}
+
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.addEventListener('click', () => showPane(tab.dataset.pane));
+}
+
+function updateStats() {
+  const text = textarea.value;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const chapters = (text.match(/^#\s+\S/gm) || []).length;
+  const parts = [`${words.toLocaleString()} word${words === 1 ? '' : 's'}`];
+  if (chapters) parts.push(`${chapters} level 1 heading${chapters === 1 ? '' : 's'}`);
+  pasteStats.textContent = parts.join(', ');
+}
+
+textarea.addEventListener('input', updateStats);
+updateStats();
+
+// File selection, by click or by drop anywhere on the page.
+function acceptFile(file) {
+  if (!file) return;
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  fileInput.files = transfer.files;
+  fileName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+  fileName.hidden = false;
+  showPane('upload');
+}
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    fileInput.click();
+  }
+});
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files && fileInput.files[0];
+  if (file) acceptFile(file);
+});
+
+for (const type of ['dragenter', 'dragover']) {
+  document.addEventListener(type, (event) => {
+    event.preventDefault();
+    dropzone.classList.add('is-over');
+  });
+}
+for (const type of ['dragleave', 'drop']) {
+  document.addEventListener(type, (event) => {
+    event.preventDefault();
+    if (type === 'dragleave' && event.target !== dropzone) return;
+    dropzone.classList.remove('is-over');
+  });
+}
+document.addEventListener('drop', (event) => {
+  const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+  if (file) acceptFile(file);
+});
+
+function report({ ok, title, message, warnings = [] }) {
+  result.hidden = false;
+  result.classList.toggle('is-error', !ok);
+  resultTitle.textContent = title;
+  resultBody.textContent = message;
+  resultWarnings.innerHTML = '';
+  if (warnings.length) {
+    resultWarnings.hidden = false;
+    for (const warning of warnings) {
+      const li = document.createElement('li');
+      li.textContent = warning;
+      resultWarnings.appendChild(li);
+    }
+  } else {
+    resultWarnings.hidden = true;
+  }
+  result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function buildFormData() {
+  const data = new FormData(form);
+  // Only send the input the visitor is actually using, so a stale file does not
+  // silently win over freshly pasted text (or the other way round).
+  if (activePane === 'paste') data.delete('file');
+  else data.delete('markdown');
+  if (!data.get('email')) data.delete('email');
+  const cover = data.get('cover');
+  if (cover && cover.size === 0) data.delete('cover');
+  const file = data.get('file');
+  if (file && file.size === 0) data.delete('file');
+  if (!document.getElementById('typographer').checked) data.set('typographer', 'false');
+  if (!document.getElementById('embedRemoteImages').checked) data.delete('embedRemoteImages');
+  return data;
+}
+
+function hasSource(data) {
+  const file = data.get('file');
+  const markdown = data.get('markdown');
+  return Boolean((file && file.size > 0) || (markdown && String(markdown).trim()));
+}
+
+async function errorFrom(response) {
+  try {
+    const body = await response.json();
+    return body.error || `The server answered ${response.status}.`;
+  } catch {
+    return `The server answered ${response.status}.`;
+  }
+}
+
+function warningsFrom(response) {
+  const header = response.headers.get('X-Md2Epub-Warnings');
+  if (!header) return [];
+  try {
+    return JSON.parse(decodeURIComponent(header));
+  } catch {
+    return [];
+  }
+}
+
+function filenameFrom(response, fallback) {
+  const header = response.headers.get('Content-Disposition') || '';
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8) return decodeURIComponent(utf8[1]);
+  const plain = /filename="([^"]+)"/i.exec(header);
+  return plain ? plain[1] : fallback;
+}
+
+async function withBusy(button, label, task) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = label;
+  document.body.classList.add('is-busy');
+  try {
+    await task();
+  } catch (error) {
+    report({ ok: false, title: 'That did not work', message: error.message });
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+    document.body.classList.remove('is-busy');
+  }
+}
+
+form.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const data = buildFormData();
+  if (!hasSource(data)) {
+    report({ ok: false, title: 'Nothing to convert', message: 'Paste some Markdown or choose a file first.' });
+    return;
+  }
+  withBusy(downloadBtn, 'Converting...', async () => {
+    const response = await fetch('/api/convert', { method: 'POST', body: data });
+    if (!response.ok) throw new Error(await errorFrom(response));
+    const blob = await response.blob();
+    const name = filenameFrom(response, 'book.epub');
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    const chapters = response.headers.get('X-Md2Epub-Chapters');
+    report({
+      ok: true,
+      title: 'EPUB ready',
+      message: `${name}, ${(blob.size / 1024).toFixed(1)} KB, ${chapters || '1'} chapter${chapters === '1' ? '' : 's'}. Check your downloads.`,
+      warnings: warningsFrom(response),
+    });
+  });
+});
+
+emailBtn.addEventListener('click', () => {
+  const data = buildFormData();
+  if (!hasSource(data)) {
+    report({ ok: false, title: 'Nothing to convert', message: 'Paste some Markdown or choose a file first.' });
+    return;
+  }
+  if (!emailInput.value.trim()) {
+    report({ ok: false, title: 'No address', message: 'Enter the email address to send the EPUB to.' });
+    emailInput.focus();
+    return;
+  }
+  data.set('email', emailInput.value.trim());
+  withBusy(emailBtn, 'Sending...', async () => {
+    const response = await fetch('/api/email', { method: 'POST', body: data });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.ok) throw new Error(body.error || `The server answered ${response.status}.`);
+    report({
+      ok: true,
+      title: body.dryRun ? 'Dry run: message written to the outbox' : 'Sent',
+      message: `${body.filename} (${(body.size / 1024).toFixed(1)} KB) ${body.dryRun ? 'was prepared for' : 'is on its way to'} ${body.to}.`,
+      warnings: body.warnings || [],
+    });
+  });
+});
+
+// Ctrl/Cmd + Enter converts and downloads.
+document.addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    event.preventDefault();
+    form.requestSubmit();
+  }
+});
+
+// Ask the server what it can do, and reflect that in the controls.
+fetch('/api/health')
+  .then((response) => response.json())
+  .then((health) => {
+    if (health.email && health.email.configured) {
+      emailStatus.textContent = health.email.transport === 'log'
+        ? `Email is in dry run mode: ${health.email.describe}.`
+        : `Email is configured: ${health.email.describe}.`;
+      emailBtn.disabled = false;
+    } else {
+      emailStatus.textContent = 'This server has no SMTP configured, so email delivery is off. Downloads still work.';
+      emailBtn.disabled = true;
+      emailInput.disabled = true;
+    }
+    if (!health.remoteImages) remoteImagesRow.hidden = true;
+  })
+  .catch(() => {
+    emailStatus.textContent = 'Could not reach the server to check email delivery.';
+  });

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>md2epub</title>
+<meta name="description" content="Paste or upload Markdown and get a valid EPUB 3 back." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%93%96%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header class="masthead">
+  <h1>md2epub</h1>
+  <p class="tagline">Paste Markdown or drop in a <code>.md</code> file. Get a valid EPUB 3 back, or have it emailed.</p>
+</header>
+
+<main>
+  <form id="convert-form" autocomplete="off">
+    <section class="panel">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab is-active" role="tab" aria-selected="true" data-pane="paste">Paste Markdown</button>
+        <button type="button" class="tab" role="tab" aria-selected="false" data-pane="upload">Upload a file</button>
+      </div>
+
+      <div class="pane is-active" id="pane-paste">
+        <label class="sr-only" for="markdown">Markdown source</label>
+        <textarea id="markdown" name="markdown" spellcheck="false" placeholder="# My Book&#10;&#10;Write or paste Markdown here. YAML frontmatter (title, author, language) is picked up automatically.&#10;&#10;Each level 1 heading starts a new chapter."></textarea>
+        <p class="hint" id="paste-stats">0 words</p>
+      </div>
+
+      <div class="pane" id="pane-upload">
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Choose a Markdown file">
+          <input type="file" id="file" name="file" accept=".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain" hidden />
+          <p class="dropzone-title">Drop a Markdown file here</p>
+          <p class="hint">or click to choose one. Up to 8 MB.</p>
+          <p class="file-name" id="file-name" hidden></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Book details</h2>
+      <p class="hint">All optional. Anything left blank falls back to the document's frontmatter, then to its first heading.</p>
+      <div class="grid">
+        <label>Title<input type="text" name="title" id="title" placeholder="From frontmatter or first heading" /></label>
+        <label>Author<input type="text" name="author" id="author" placeholder="Separate several with commas" /></label>
+        <label>Language<input type="text" name="language" id="language" placeholder="en" /></label>
+        <label>Cover image
+          <input type="file" name="cover" id="cover" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" />
+        </label>
+      </div>
+
+      <details class="more">
+        <summary>More options</summary>
+        <div class="grid">
+          <label>Publisher<input type="text" name="publisher" id="publisher" /></label>
+          <label>Subjects<input type="text" name="subjects" id="subjects" placeholder="fiction, essays" /></label>
+          <label>Rights<input type="text" name="rights" id="rights" placeholder="(c) 2026 ..." /></label>
+          <label>Description<input type="text" name="description" id="description" /></label>
+          <label>Start a new chapter at
+            <select name="splitLevel" id="splitLevel">
+              <option value="1" selected>Every level 1 heading (#)</option>
+              <option value="2">Every level 2 heading (##)</option>
+              <option value="0">Never: one single chapter</option>
+            </select>
+          </label>
+          <label>Contents depth
+            <select name="tocDepth" id="tocDepth">
+              <option value="1">Level 1 headings</option>
+              <option value="2">Down to level 2</option>
+              <option value="3" selected>Down to level 3</option>
+              <option value="6">Every heading</option>
+            </select>
+          </label>
+        </div>
+        <label class="check"><input type="checkbox" name="typographer" id="typographer" value="true" checked /> Smart quotes and dashes</label>
+        <label class="check" id="remote-images-row"><input type="checkbox" name="embedRemoteImages" id="embedRemoteImages" value="true" /> Download images referenced by URL into the book</label>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>Delivery</h2>
+      <div class="actions">
+        <button type="submit" class="primary" id="download-btn">Download EPUB</button>
+        <span class="hint" id="download-hint">or send it on:</span>
+      </div>
+      <div class="email-row">
+        <label class="grow">Email address<input type="email" name="email" id="email" placeholder="reader@example.com" /></label>
+        <button type="button" id="email-btn">Email the EPUB</button>
+      </div>
+      <p class="hint" id="email-status">Checking whether this server can send email...</p>
+    </section>
+  </form>
+
+  <section class="panel result" id="result" hidden>
+    <h2 id="result-title">Done</h2>
+    <p id="result-body"></p>
+    <ul id="result-warnings" class="warnings" hidden></ul>
+  </section>
+</main>
+
+<footer>
+  <p>Output is EPUB 3, validated against EPUBCheck. Raw HTML in the source is sanitised; scripts are stripped.</p>
+</footer>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

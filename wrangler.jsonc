@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "md2epub",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "MAIL_RATE_PER_HOUR": "20",
+    "EMBED_REMOTE_IMAGES": "false"
+  }
+  // Email from a Worker goes over HTTP, not SMTP:
+  //   npx wrangler secret put RESEND_API_KEY
+  //   npx wrangler secret put MAIL_FROM
+  // Without those two the deployed portal is download only.
+}

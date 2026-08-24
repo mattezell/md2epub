@@ -1,0 +1,34 @@
+# md2epub portal, fronted by Caddy at https://md2epub.lab.immatt.com
+# (design of record: projects wiki, tailnet-https-caddy-cloudflare).
+#
+# Install:
+#   sudo install -m 644 /home/matt/w/md2epub/md2epub.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now md2epub
+#
+# Binds loopback only: the tailnet front door is Caddy, and the app has no
+# authentication of its own, so nothing should reach it another way.
+
+[Unit]
+Description=md2epub - Markdown to EPUB portal
+Documentation=https://github.com/mattezell/md2epub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matt
+Group=matt
+WorkingDirectory=/home/matt/w/md2epub
+# PORT, HOST and the mail settings come from the gitignored .env, which the
+# server reads itself at startup.
+ExecStart=/usr/bin/node /home/matt/w/md2epub/src/server.js
+Restart=on-failure
+RestartSec=5
+
+# Diagram rendering spawns a headless Chrome per conversion, which needs a
+# writable temp space and a little room.
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -56,14 +56,16 @@ const DEFAULTS = {
 };
 
 /**
- * @param {string[]} sources unique image src values found in the document
+ * @param {Array<{id: string, src: string, from?: string}>} references unique image
+ *   references. `from` is the key of the document that carries the reference, so
+ *   a bundle can resolve two documents' "./diagram.png" to different files.
  * @param {object} opts
  * @param {boolean} opts.embedRemoteImages fetch http(s) images
  * @param {(url: string) => Promise<{bytes: Uint8Array, declaredType?: string}|null>} [opts.fetchImage]
- * @param {(path: string) => Promise<{bytes: Uint8Array, declaredType?: string}|null>} [opts.resolveLocal]
- * @returns {Promise<{ files: Array, map: Map<string, string>, warnings: string[] }>}
+ * @param {(path: string, from?: string) => Promise<{bytes: Uint8Array, declaredType?: string}|null>} [opts.resolveLocal]
+ * @returns {Promise<{ files: Array, map: Map<string, string>, warnings: string[] }>} map is keyed by reference id
  */
-export async function resolveImages(sources, opts = {}) {
+export async function resolveImages(references, opts = {}) {
   const config = { ...DEFAULTS, ...opts };
   const files = [];
   const map = new Map();
@@ -71,7 +73,7 @@ export async function resolveImages(sources, opts = {}) {
   let total = 0;
   let counter = 0;
 
-  const accept = (src, payload, label) => {
+  const accept = (id, payload, label) => {
     if (!payload || !payload.bytes || !payload.bytes.length) {
       warnings.push(`Image ${label} was empty and has been replaced by its alt text.`);
       return;
@@ -93,22 +95,23 @@ export async function resolveImages(sources, opts = {}) {
     counter += 1;
     const path = `images/img-${String(counter).padStart(3, '0')}.${kind.ext}`;
     files.push({ path, mediaType: kind.mediaType, bytes: payload.bytes });
-    map.set(src, path);
+    map.set(id, path);
   };
 
-  for (const src of sources) {
+  for (const reference of references) {
+    const { id, src, from } = reference;
     const trimmed = src.trim();
     try {
       if (/^data:/i.test(trimmed)) {
-        accept(src, decodeDataUri(trimmed), 'embedded as a data URI');
+        accept(id, decodeDataUri(trimmed), 'embedded as a data URI');
       } else if (/^https?:/i.test(trimmed)) {
         if (!config.embedRemoteImages || !config.fetchImage) {
           warnings.push(`Remote image ${trimmed} was replaced by its alt text (EPUB cannot reference images over the network).`);
           continue;
         }
-        accept(src, await config.fetchImage(trimmed), trimmed);
+        accept(id, await config.fetchImage(trimmed), trimmed);
       } else if (config.resolveLocal) {
-        accept(src, await config.resolveLocal(trimmed), trimmed);
+        accept(id, await config.resolveLocal(trimmed, from), trimmed);
       } else {
         warnings.push(`Image ${trimmed} points at a local file that was not uploaded, so its alt text is shown instead.`);
       }

@@ -177,7 +177,7 @@ test('conversion: links to paths outside the book become plain text', async () =
 });
 
 test('conversion: data URI images are packaged and referenced by path', async () => {
-  const result = await markdownToEpub(`# P\n\n![sq](${PNG_DATA_URI})`);
+  const result = await markdownToEpub(`# P\n\n![sq](${PNG_DATA_URI})`, { generateCover: false });
   assert.equal(result.imageCount, 1);
   const files = entries(result.bytes);
   assert.ok(files['EPUB/images/img-001.png']);
@@ -203,6 +203,7 @@ test('conversion: remote images are fetched when the caller allows it', async ()
   const decoded = decodeDataUri(PNG_DATA_URI);
   let asked = '';
   const result = await markdownToEpub('# P\n\n![r](https://example.com/x.png)', {
+    generateCover: false,
     embedRemoteImages: true,
     fetchImage: async (url) => {
       asked = url;

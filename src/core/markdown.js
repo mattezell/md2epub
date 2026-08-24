@@ -35,11 +35,13 @@ function plainText(inlineToken) {
  *
  * @returns {{ chapters: Array, toc: Array, anchors: Map<string, number>, docTitle: string|undefined }}
  */
-export function splitDocument(body, { splitLevel = 1, tocDepth = 3, renderer } = {}) {
+export function splitDocument(body, { splitLevel = 1, tocDepth = 3, renderer, slugger: sharedSlugger } = {}) {
   const md = renderer || createRenderer();
   const env = {};
   const tokens = md.parse(body, env);
-  const slugger = makeSlugger();
+  // A bundle shares one slugger across every document, so heading ids stay
+  // unique book-wide and a cross document link can find its target.
+  const slugger = sharedSlugger || makeSlugger();
 
   // Pass 1: give every heading an id and remember its position.
   const headings = [];

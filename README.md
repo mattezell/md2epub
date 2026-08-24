@@ -18,7 +18,7 @@ npm start                      # http://127.0.0.1:8787
 That is the whole download path. Email needs a few more lines of config, below.
 
 ```bash
-npm test                       # 71 tests: converter, API, guards and the portal itself
+npm test                       # 91 tests: converter, API, guards and the portal itself
 npm run epubcheck:install      # fetches EPUBCheck into tools/ (needs java + unzip)
 npm run validate               # converts every fixture and runs EPUBCheck over it
 ```
@@ -28,17 +28,27 @@ npm run validate               # converts every fixture and runs EPUBCheck over 
 Copy `.env.example` to `.env` and fill in the SMTP block:
 
 ```ini
-SMTP_HOST=smtp.example.com
+SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=someone@example.com
-SMTP_PASS=an-app-password
-MAIL_FROM=md2epub <someone@example.com>
+SMTP_USER=you@gmail.com
+SMTP_PASS=a-16-character-app-password
+MAIL_FROM=md2epub <you@gmail.com>
 ```
 
-Restart. The portal picks this up through `/api/health` and enables its email
-controls; without it the controls stay disabled and `/api/email` answers 503.
-TLS is required by default (`STARTTLS` on 587, implicit TLS on 465). Gmail and
-Fastmail both need an app password rather than the account password.
+Then check it before relying on it:
+
+```bash
+node scripts/mail-check.mjs you@example.com
+```
+
+**[docs/EMAIL-SETUP.md](docs/EMAIL-SETUP.md) is the full guide**: Gmail step by
+step (app passwords are mandatory now, account passwords stopped working in May
+2025), the Kindle approved sender requirement, a comparison of Fastmail, Resend,
+Amazon SES, Brevo and Postmark, and a table of what each failure message means.
+
+Restart after editing `.env`. The portal picks the configuration up through
+`/api/health` and enables its email controls; without it the controls stay
+disabled and `/api/email` answers 503.
 
 To exercise the email path without credentials, set `MAIL_TRANSPORT=log`. The
 message and its attachment are written to `.mail-outbox/` instead of being sent,
@@ -54,20 +64,41 @@ MAIL_ALLOWED_RECIPIENTS=me@example.com,@kindle.com
 
 `MAIL_RATE_PER_HOUR` (default 20) caps sends per client address per hour.
 
-Amazon's Send to Kindle accepts EPUB, so `@kindle.com` in the allowlist plus
-your device address in the portal is a working Markdown to Kindle pipeline. The
-sending address has to be on your Approved Personal Document E-mail List.
+### Markdown to Kindle
+
+Put your device address in `.env` and send from the terminal:
+
+```ini
+KINDLE_ADDRESS=you@kindle.com
+MAIL_ALLOWED_RECIPIENTS=@kindle.com
+```
+
+```bash
+md2epub HANDOFF.md --kindle          # one document
+md2epub ./docs --kindle              # a whole folder as one book
+```
+
+The address in `MAIL_FROM` must be on your Amazon Approved Personal Document
+E-mail List or the message is dropped, usually without a bounce. Amazon's limit
+is 50 MB per email; converted Markdown lands between 3 KB and 100 KB.
+[docs/EMAIL-SETUP.md](docs/EMAIL-SETUP.md) has the details.
 
 ## Command line
 
-The CLI is the only front end that can resolve images by relative path, because
-it is the only one that knows where the Markdown file lives.
+The CLI knows where the Markdown lives, so it is the front end that can resolve
+relative images, bundle a folder into one book, and send without a browser.
 
 ```bash
-node src/cli.js book.md -o book.epub --author "Ada Lovelace" --cover cover.jpg
-cat book.md | node src/cli.js - --title "From A Pipe"
-node src/cli.js --help
+npm link                             # then md2epub works anywhere
+
+md2epub book.md -o book.epub --author "Ada Lovelace" --cover cover.jpg
+md2epub ./docs --title "Project Docs" --kindle
+md2epub README.md docs/ -r --email me@example.com
+cat book.md | md2epub - --title "From A Pipe"
+md2epub --help
 ```
+
+Without `npm link`, `node src/cli.js` does the same thing.
 
 ## HTTP API
 
@@ -93,6 +124,26 @@ World." http://127.0.0.1:8787/api/convert -o hello.epub
 curl -F "file=@book.md" -F "email=me@example.com" http://127.0.0.1:8787/api/email
 ```
 
+## Several documents, one book
+
+Pass more than one file, or a directory, and each document becomes a chapter of
+a single book. This is the shape most project documentation is in.
+
+```bash
+md2epub ./docs -r --title "Neon Exile Docs" --kindle
+```
+
+- Documents are ordered README first, then alphabetically, so numeric prefixes
+  (`01-intro.md`) do what you expect.
+- **Links between documents become links between chapters**, including
+  `../api/reference.md#endpoints`. Links to anything not in the book degrade to
+  plain text, because EPUB rejects a link that leaves the container.
+- Heading ids stay unique across the whole book, and two documents can each
+  reference their own `diagram.png` without colliding.
+- The contents nests each document's headings under its own entry.
+
+The portal accepts several files at once for the same result.
+
 ## What the conversion does
 
 - YAML frontmatter (`title`, `author`, `language`, `publisher`, `description`,
@@ -107,7 +158,11 @@ curl -F "file=@book.md" -F "email=me@example.com" http://127.0.0.1:8787/api/emai
   referencing images over the network, and anything that cannot be packaged
   degrades to its alt text with a warning rather than breaking the book.
 - Optional cover image, which becomes a cover page plus the `cover-image`
-  manifest property that readers use for the shelf thumbnail.
+  manifest property that readers use for the shelf thumbnail. When none is
+  given, a cover is drawn from the title, author and date, so a shelf of
+  converted documents is distinguishable. `--no-cover` turns that off.
+- A document with no `#` heading takes its title from its file name, so
+  `01-design-notes.md` becomes "Design Notes" rather than "Untitled".
 
 ### Raw HTML in the source is sanitised, not trusted
 
@@ -159,7 +214,9 @@ src/app.js    Hono API shared by both runtimes
 src/server.js Node entry: static files, .env, SMTP
 src/worker.js Cloudflare entry: assets binding, HTTP mail
 src/cli.js    command line
+src/mail/     transports (SMTP, HTTP, dry run) and the shared message body
 public/       the portal, no build step
+docs/         email setup guide
 test/         node:test suites, including the portal driven under jsdom
 scripts/      EPUBCheck install and the fixture validation run
 ```
@@ -167,8 +224,8 @@ scripts/      EPUBCheck install and the fixture validation run
 ## Limits and known gaps
 
 - Uploads are capped at 8 MB of Markdown and 12 MB per image (configurable).
-- Only the single Markdown file is uploaded, so relative image paths cannot be
-  resolved through the portal. Use a data URI, or the CLI.
+- The portal receives files without their folder, so relative image paths
+  cannot be resolved there. Use a data URI, or the CLI.
 - No footnote, math or Mermaid support; those are markdown-it plugins away.
 - The rate limiter is in process memory, so it resets on restart and is per
   Worker isolate rather than global.

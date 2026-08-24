@@ -53,11 +53,12 @@ async function assertPublicHost(rawHostname) {
 }
 
 /**
- * Fetch a remote image with size, time and destination limits.
- * @returns {Promise<{bytes: Uint8Array, declaredType?: string}|null>}
+ * Fetch a URL with size, time and destination limits, following redirects by
+ * hand so every hop is checked.
+ * @returns {(url: string) => Promise<{bytes: Uint8Array, contentType?: string, url: string}>}
  */
-export function createImageFetcher({ maxBytes = 12 * 1024 * 1024, timeoutMs = 10000, maxRedirects = 3, fetchImpl = fetch } = {}) {
-  return async function fetchImage(rawUrl) {
+export function createGuardedFetcher({ maxBytes = 12 * 1024 * 1024, timeoutMs = 10000, maxRedirects = 3, accept = '*/*', fetchImpl = fetch } = {}) {
+  return async function guardedFetch(rawUrl) {
     let url = new URL(rawUrl);
     for (let hop = 0; hop <= maxRedirects; hop += 1) {
       if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('only http and https images can be fetched');
@@ -70,7 +71,7 @@ export function createImageFetcher({ maxBytes = 12 * 1024 * 1024, timeoutMs = 10
         response = await fetchImpl(url, {
           redirect: 'manual',
           signal: controller.signal,
-          headers: { accept: 'image/*', 'user-agent': 'md2epub/0.1 (+https://github.com/)' },
+          headers: { accept, 'user-agent': 'md2epub/0.1 (+https://github.com/)' },
         });
       } finally {
         clearTimeout(timer);
@@ -83,16 +84,32 @@ export function createImageFetcher({ maxBytes = 12 * 1024 * 1024, timeoutMs = 10
       if (!response.ok) throw new Error(`the server answered ${response.status}`);
 
       const declared = Number(response.headers.get('content-length') || 0);
-      if (declared && declared > maxBytes) throw new Error('the image is too large');
+      if (declared && declared > maxBytes) throw new Error('the response is too large');
 
       const buffer = await response.arrayBuffer();
-      if (buffer.byteLength > maxBytes) throw new Error('the image is too large');
+      if (buffer.byteLength > maxBytes) throw new Error('the response is too large');
       return {
         bytes: new Uint8Array(buffer),
-        declaredType: (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase() || undefined,
+        contentType: (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase() || undefined,
+        // The URL after redirects, which is what relative links resolve against.
+        url: url.toString(),
       };
     }
     throw new Error('too many redirects');
+  };
+}
+
+/**
+ * The image flavour of the same thing, kept as its own name because the
+ * converter's hook expects `declaredType`.
+ * @returns {(url: string) => Promise<{bytes: Uint8Array, declaredType?: string}>}
+ */
+export function createImageFetcher(options = {}) {
+  const fetchGuarded = createGuardedFetcher({ accept: 'image/*', ...options });
+  return async function fetchImage(url) {
+    const result = await fetchGuarded(url);
+    if (result.bytes.length > (options.maxBytes || 12 * 1024 * 1024)) throw new Error('the image is too large');
+    return { bytes: result.bytes, declaredType: result.contentType };
   };
 }
 

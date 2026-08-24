@@ -1,0 +1,36 @@
+{
+  "name": "md2epub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Paste or upload Markdown, get a valid EPUB 3 back: download it or have it emailed.",
+  "main": "src/core/index.js",
+  "exports": {
+    ".": "./src/core/index.js",
+    "./app": "./src/app.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js",
+    "cli": "node src/cli.js",
+    "validate": "node scripts/validate.mjs",
+    "epubcheck:install": "node scripts/install-epubcheck.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "entities": "^8.0.0",
+    "fflate": "^0.8.2",
+    "hono": "^4.9.0",
+    "js-yaml": "^4.1.0",
+    "markdown-it": "^15.0.0",
+    "nodemailer": "^9.0.0"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1",
+    "wrangler": "^4.125.0"
+  }
+}

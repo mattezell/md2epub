@@ -136,6 +136,7 @@ function conversionOptions(fields, cover, config) {
     embedRemoteImages: bool(fields.embedRemoteImages, config.embedRemoteImages) && Boolean(config.fetchImage),
     fetchImage: config.fetchImage,
     renderDiagram: bool(fields.renderDiagrams, config.renderDiagrams) ? config.renderDiagram : undefined,
+    rasterizeSvg: config.rasterizeSvg,
     cover,
   };
 }

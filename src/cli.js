@@ -10,6 +10,7 @@ import { dirname, resolve, relative, isAbsolute, join, basename, sep } from 'nod
 import { markdownToEpub, titleFromFilename } from './core/index.js';
 import { createImageFetcher } from './net.js';
 import { createMermaidRenderer, diagramSupport } from './diagrams.js';
+import { createSvgRasterizer } from './chrome.js';
 import { buildMailer, loadEnv, EMAIL_SETUP_HINT } from './mail/factory.js';
 import { composeBookEmail } from './mail/message.js';
 
@@ -242,6 +243,9 @@ async function main() {
     embedRemoteImages: opts.embedRemoteImages,
     fetchImage: opts.embedRemoteImages ? createImageFetcher() : undefined,
     renderDiagram,
+    // Costs a fraction of a second and is the difference between a cover and
+    // the generic placeholder on a Kindle shelf, so it is not behind a flag.
+    rasterizeSvg: createSvgRasterizer({ env }),
     resolveLocal: createLocalResolver(root),
     ...(documents.length === 1 && documents[0].path !== 'stdin.md' ? { name: documents[0].path } : {}),
   });
@@ -268,6 +272,12 @@ async function main() {
   }
 
   for (const warning of result.warnings) process.stderr.write(`warning: ${warning}\n`);
+
+  // Said once, here rather than as a per book warning: it is a property of this
+  // machine, and it is the difference between a cover and a grey placeholder.
+  if (!opts.cover && opts.generateCover !== false && !createSvgRasterizer({ env })) {
+    process.stderr.write('note: no Chrome found, so the cover is an SVG. Kindle shows a generic cover for those. Set CHROME_PATH, or pass --no-cover.\n');
+  }
 }
 
 main().catch((err) => {

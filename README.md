@@ -18,7 +18,7 @@ npm start                      # http://127.0.0.1:8787
 That is the whole download path. Email needs a few more lines of config, below.
 
 ```bash
-npm test                       # 108 tests: converter, API, guards and the portal itself
+npm test                       # 118 tests: converter, API, guards and the portal itself
 npm run epubcheck:install      # fetches EPUBCheck into tools/ (needs java + unzip)
 npm run diagrams:install       # optional: mermaid rendering (see Diagrams below)
 npm run validate               # converts every fixture and runs EPUBCheck over it
@@ -202,6 +202,13 @@ on an exposed portal: every conversion then spawns a browser.
   manifest property that readers use for the shelf thumbnail. When none is
   given, a cover is drawn from the title, author and date, so a shelf of
   converted documents is distinguishable. `--no-cover` turns that off.
+- **The drawn cover is rasterised to PNG** using the local Chrome, at 1600x2560.
+  It is drawn as SVG, which is valid EPUB, but Kindle's converter does not
+  render an SVG cover: the book arrives with the generic grey placeholder
+  instead. Verified on a device, which is the only way to find that out. An
+  uploaded SVG cover gets the same treatment. Without a browser the cover stays
+  SVG and the CLI says so once; set `CHROME_PATH` if yours is somewhere unusual,
+  or `RASTERIZE_COVER=false` on the server to skip it.
 - A document with no `#` heading takes its title from its file name, so
   `01-design-notes.md` becomes "Design Notes" rather than "Untitled".
 
@@ -256,7 +263,8 @@ src/server.js Node entry: static files, .env, SMTP
 src/worker.js Cloudflare entry: assets binding, HTTP mail
 src/cli.js    command line
 src/mail/     transports (SMTP, HTTP, dry run) and the shared message body
-src/diagrams.js  mermaid rendering through a local headless Chrome
+src/chrome.js    finding and driving the local browser
+src/diagrams.js  mermaid rendering through it
 public/       the portal, no build step
 docs/         email setup guide
 test/         node:test suites, including the portal driven under jsdom
@@ -269,6 +277,8 @@ scripts/      EPUBCheck install and the fixture validation run
 - The portal receives files without their folder, so relative image paths
   cannot be resolved there. Use a data URI, or the CLI.
 - No footnote or math support; those are markdown-it plugins away.
-- Diagram rendering needs a local browser, so it does not work on Workers.
+- Diagram rendering and cover rasterising both need a local browser, so neither
+  works on Workers. A Worker deployment draws SVG covers, which Kindle will not
+  display.
 - The rate limiter is in process memory, so it resets on restart and is per
   Worker isolate rather than global.

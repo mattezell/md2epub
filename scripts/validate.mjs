@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { markdownToEpub } from '../src/core/index.js';
 import { createMermaidRenderer, diagramSupport } from '../src/diagrams.js';
+import { createSvgRasterizer, findChrome } from '../src/chrome.js';
 
 const run = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -66,6 +67,11 @@ const renderDiagram = diagrams.available ? createMermaidRenderer() : undefined;
 console.log(diagrams.available
   ? `Diagrams   : rendering with ${diagrams.chrome}`
   : `Diagrams   : NOT rendered (${diagrams.reason}); mermaid fences stay code blocks`);
+
+const rasterizeSvg = createSvgRasterizer();
+console.log(rasterizeSvg
+  ? `Covers     : rasterised to PNG with ${findChrome()}`
+  : 'Covers     : left as SVG (no browser found); Kindle would show a generic cover');
 console.log('');
 
 let failures = 0;
@@ -81,6 +87,7 @@ for (const testCase of cases) {
     const result = await markdownToEpub(markdown, {
       cover: testCase.cover ? { bytes: coverBytes } : undefined,
       renderDiagram,
+      rasterizeSvg,
       resolveLocal: localResolver(fixturesDir),
       now: new Date('2026-08-24T12:00:00Z'),
       identifier: `urn:uuid:00000000-0000-4000-8000-${createHash('sha1').update(label).digest('hex').slice(0, 12)}`,

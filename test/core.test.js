@@ -82,6 +82,15 @@ test('sanitiser: apostrophes and quotes stay readable in text', () => {
   assert.equal(out, '<p>it\'s "quoted"</p>');
 });
 
+test('sanitiser: inline styles are kept only when they are real CSS', () => {
+  assert.match(htmlToXhtml('<p style="color: red; margin: 0">x</p>'), /style="color: red; margin: 0"/);
+  // MDX/JSX: style={{position: 'relative'}} parses out as `{{position:`, which
+  // EPUB rejects as CSS (CSS-008) and invalidates the whole book.
+  assert.equal(htmlToXhtml('<div style="{{position:">x</div>'), '<div>x</div>');
+  assert.equal(htmlToXhtml('<p style="background: url(http://evil/x.png)">x</p>'), '<p>x</p>');
+  assert.match(htmlToXhtml('<p style="color: red; background: url(x)">y</p>'), /style="color: red"/);
+});
+
 test('sanitiser: ids that XML rejects are repaired', () => {
   assert.match(htmlToXhtml('<div id="9lives">x</div>'), /id="id-9lives"/);
 });
@@ -152,6 +161,19 @@ test('conversion: links to headings that do not exist are unwrapped and reported
   const result = await markdownToEpub('# One\n\n[nowhere](#nope)');
   assert.match(text(result.bytes, 'EPUB/ch-001.xhtml'), /<a>nowhere<\/a>/);
   assert.equal(result.warnings.some((w) => w.includes('#nope')), true);
+});
+
+test('conversion: links to paths outside the book become plain text', async () => {
+  // Documentation written for a docs site is full of these, and EPUB rejects
+  // them (RSC-026), so the whole book would be invalid.
+  const result = await markdownToEpub('# Notes\n\n[a](/user-guide/x) [b](./other.md) [c](https://ok.example) [d](#notes)');
+  const chapter = text(result.bytes, 'EPUB/ch-001.xhtml');
+  assert.match(chapter, /<a>a<\/a>/);
+  assert.match(chapter, /<a>b<\/a>/);
+  assert.match(chapter, /<a href="https:\/\/ok\.example">c<\/a>/, 'external links survive');
+  assert.match(chapter, /<a href="#notes">d<\/a>/, 'in-book anchors survive');
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /2 links point outside the book/);
 });
 
 test('conversion: data URI images are packaged and referenced by path', async () => {

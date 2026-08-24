@@ -64,6 +64,19 @@ function isSafeUrl(value, { allowData = false } = {}) {
   return !ANY_SCHEME.test(url);
 }
 
+// EPUB validates inline styles as CSS, so anything that is not a declaration
+// list has to go. MDX documentation is the common source of this: a JSX
+// `style={{position: 'relative'}}` parses out as the attribute value
+// `{{position:`, which fails validation (CSS-008) and invalidates the book.
+function sanitiseStyle(value) {
+  return value
+    .split(';')
+    .map((declaration) => declaration.trim())
+    .filter((declaration) => /^[a-zA-Z-]+\s*:\s*[^;{}<>]+$/.test(declaration))
+    .filter((declaration) => !/url\s*\(|expression|javascript:/i.test(declaration))
+    .join('; ');
+}
+
 // Parse one tag starting at html[start] === '<'. Returns null when the '<' is
 // literal text rather than the start of a tag.
 function parseTag(html, start) {
@@ -142,7 +155,10 @@ function renderAttrs(name, attrs, opts) {
     if (seen.has(attr)) continue;
 
     let value = stripIllegalXmlChars(decodeHTML(rawValue));
-    if (attr === 'style' && /url\s*\(|expression|javascript:/i.test(value)) continue;
+    if (attr === 'style') {
+      value = sanitiseStyle(value);
+      if (!value) continue;
+    }
     if (attr === 'id') value = safeId(value);
     if ((attr === 'width' || attr === 'height') && !/^\d+$/.test(value.trim())) continue;
 

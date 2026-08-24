@@ -157,11 +157,20 @@ export async function markdownToEpub(markdown, options = {}) {
 
   // Pass 2: rewrite links and images, then wrap each chapter in an XHTML document.
   const danglingLinks = new Set();
+  const externalPaths = new Set();
   const chapters = parsed.map((chapter, index) => {
     const filename = chapterFilename(index);
     const bodyXhtml = htmlToXhtml(chapter.html, {
       rewriteUrl: (tag, attr, value) => {
         if (tag === 'img' && attr === 'src') return resolved.map.get(value) || null;
+        // A link to a path that is not in the book leaks outside the
+        // container, which EPUB forbids (RSC-026). Documentation written for a
+        // docs site is full of them: /user-guide/thing, ./other-doc.md. They
+        // become plain text rather than invalid links.
+        if ((attr === 'href' || attr === 'cite') && !/^(#|https?:|mailto:|tel:|urn:|ftp:)/i.test(value)) {
+          externalPaths.add(value);
+          return null;
+        }
         if (attr === 'href' && value.startsWith('#')) {
           const target = anchors.get(value.slice(1));
           // A link to a heading that does not exist is an EPUB error, so the
@@ -194,6 +203,12 @@ ${bodyXhtml}
     });
     return { id: filename.replace('.xhtml', ''), filename, title, xhtml };
   });
+
+  if (externalPaths.size) {
+    const shown = [...externalPaths].slice(0, 3).join(', ');
+    const rest = externalPaths.size > 3 ? `, and ${externalPaths.size - 3} more` : '';
+    warnings.push(`${externalPaths.size} link${externalPaths.size === 1 ? '' : 's'} point outside the book (${shown}${rest}) and are shown as plain text. EPUB cannot link to files that are not in it.`);
+  }
 
   for (const link of danglingLinks) {
     warnings.push(`The link to ${link} points at a heading that is not in the document, so it is shown as plain text.`);

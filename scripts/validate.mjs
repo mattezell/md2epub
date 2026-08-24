@@ -11,6 +11,7 @@ import { dirname, join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { markdownToEpub } from '../src/core/index.js';
+import { createMermaidRenderer, diagramSupport } from '../src/diagrams.js';
 
 const run = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -56,6 +57,17 @@ const cases = [
   { name: fixtures, cover: false, label: 'all-as-one-bundle' },
 ];
 const coverBytes = new Uint8Array(await readFile(join(fixturesDir, 'local-image.png')));
+
+// Diagram rendering needs a browser, so it is exercised only where the
+// toolchain is installed. Silence here would read as coverage that does not
+// exist, so say which it was.
+const diagrams = diagramSupport();
+const renderDiagram = diagrams.available ? createMermaidRenderer() : undefined;
+console.log(diagrams.available
+  ? `Diagrams   : rendering with ${diagrams.chrome}`
+  : `Diagrams   : NOT rendered (${diagrams.reason}); mermaid fences stay code blocks`);
+console.log('');
+
 let failures = 0;
 
 for (const testCase of cases) {
@@ -68,13 +80,14 @@ for (const testCase of cases) {
   try {
     const result = await markdownToEpub(markdown, {
       cover: testCase.cover ? { bytes: coverBytes } : undefined,
+      renderDiagram,
       resolveLocal: localResolver(fixturesDir),
       now: new Date('2026-08-24T12:00:00Z'),
       identifier: `urn:uuid:00000000-0000-4000-8000-${createHash('sha1').update(label).digest('hex').slice(0, 12)}`,
     });
     epubPath = join(outDir, `${label}.epub`);
     await writeFile(epubPath, result.bytes);
-    process.stdout.write(`${label.padEnd(24)} ${String(result.documentCount).padStart(2)} doc ${String(result.chapterCount).padStart(2)} ch ${String(Math.round(result.bytes.length / 1024)).padStart(4)} KB  `);
+    process.stdout.write(`${label.padEnd(24)} ${String(result.documentCount).padStart(2)} doc ${String(result.chapterCount).padStart(2)} ch ${String(result.diagramCount).padStart(2)} dia ${String(Math.round(result.bytes.length / 1024)).padStart(4)} KB  `);
   } catch (err) {
     console.log(`${label.padEnd(16)} CONVERSION FAILED: ${err.message}`);
     failures += 1;

@@ -18,8 +18,9 @@ npm start                      # http://127.0.0.1:8787
 That is the whole download path. Email needs a few more lines of config, below.
 
 ```bash
-npm test                       # 91 tests: converter, API, guards and the portal itself
+npm test                       # 108 tests: converter, API, guards and the portal itself
 npm run epubcheck:install      # fetches EPUBCheck into tools/ (needs java + unzip)
+npm run diagrams:install       # optional: mermaid rendering (see Diagrams below)
 npm run validate               # converts every fixture and runs EPUBCheck over it
 ```
 
@@ -144,6 +145,46 @@ md2epub ./docs -r --title "Neon Exile Docs" --kindle
 
 The portal accepts several files at once for the same result.
 
+## Diagrams
+
+Mermaid diagrams can be rendered to images and embedded, so they arrive as
+pictures on a device rather than as a wall of diagram source.
+
+```bash
+npm run diagrams:install       # once: mermaid-cli, pointed at your own Chrome
+md2epub notes.md --diagrams
+```
+
+The toolchain is deliberately **not** a dependency of this project: it is around
+500 MB on disk. The installer puts it in `tools/mermaid/` and reuses the Chrome
+already on the machine rather than downloading a second Chromium. Without it, a
+diagram stays an ordinary code block, which is also what happens to any single
+diagram that fails to render.
+
+Both ways of writing a diagram are picked up:
+
+- ` ```mermaid ` fences.
+- Raw `<pre class="mermaid">` blocks, which is what documentation written for a
+  site that renders mermaid in the browser tends to use, because syntax
+  highlighters intercept the fence first.
+
+A diagram inside a ` ```html ` example is left alone: documentation *about*
+diagrams should not sprout pictures.
+
+Defaults are chosen for e-ink: the `neutral` theme (the standard palette turns
+to mud on a 16 level grayscale screen), a white background, 1072 pixels wide at
+2x, and PNG rather than SVG because Kindle's converter is unreliable with SVG.
+`--diagram-theme`, `--diagram-format` and `--diagram-scale` override those.
+Inline `style` directives inside a diagram win over the theme, so a diagram that
+carries its own colours keeps them.
+
+Rendered images are cached by content under `~/.cache/md2epub/diagrams`, and an
+identical diagram repeated across a folder of documents is rendered once. A
+first render costs about half a second; the cached path is about 40x faster.
+
+To enable it on the server, set `RENDER_DIAGRAMS=true`. Think before doing that
+on an exposed portal: every conversion then spawns a browser.
+
 ## What the conversion does
 
 - YAML frontmatter (`title`, `author`, `language`, `publisher`, `description`,
@@ -215,6 +256,7 @@ src/server.js Node entry: static files, .env, SMTP
 src/worker.js Cloudflare entry: assets binding, HTTP mail
 src/cli.js    command line
 src/mail/     transports (SMTP, HTTP, dry run) and the shared message body
+src/diagrams.js  mermaid rendering through a local headless Chrome
 public/       the portal, no build step
 docs/         email setup guide
 test/         node:test suites, including the portal driven under jsdom
@@ -226,6 +268,7 @@ scripts/      EPUBCheck install and the fixture validation run
 - Uploads are capped at 8 MB of Markdown and 12 MB per image (configurable).
 - The portal receives files without their folder, so relative image paths
   cannot be resolved there. Use a data URI, or the CLI.
-- No footnote, math or Mermaid support; those are markdown-it plugins away.
+- No footnote or math support; those are markdown-it plugins away.
+- Diagram rendering needs a local browser, so it does not work on Workers.
 - The rate limiter is in process memory, so it resets on restart and is per
   Worker isolate rather than global.

@@ -72,6 +72,14 @@ th { background: #eee; }
 img { max-width: 100%; height: auto; }
 
 figure { margin: 1em 0; text-align: center; }
+
+.md2epub-diagram {
+  margin: 1.2em 0;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.md2epub-diagram img { max-width: 100%; height: auto; }
 figcaption { font-size: 0.85em; font-style: italic; }
 
 hr { border: 0; border-top: 1px solid #bbb; margin: 1.6em 0; }

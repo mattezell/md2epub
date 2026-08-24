@@ -18,6 +18,7 @@ import { generateCover } from './cover.js';
 import { DEFAULT_CSS } from './css.js';
 import { filenameFor, makeSlugger } from './slug.js';
 import { resolveFrom, normalisePath, titleFromFilename, basenameOf } from './paths.js';
+import { findDiagrams, diagramPath } from './diagrams.js';
 import { escapeXml, escapeAttr } from './xml.js';
 
 export const MAX_MARKDOWN_BYTES = 8 * 1024 * 1024;
@@ -124,9 +125,13 @@ function normaliseDocuments(input) {
  * @param {boolean} [options.embedRemoteImages] fetch http(s) images into the book
  * @param {(url: string) => Promise<{bytes: Uint8Array, declaredType?: string}|null>} [options.fetchImage]
  * @param {(path: string, from?: string) => Promise<{bytes: Uint8Array, declaredType?: string}|null>} [options.resolveLocal]
+ * @param {(source: string, info: {language: string, hash: string}) => Promise<{bytes: Uint8Array, mediaType: string}|null>} [options.renderDiagram]
+ *   Renders a ```mermaid fence to an image. Without it, and on any failure, the
+ *   fence stays an ordinary code block.
+ * @param {string[]} [options.diagramLanguages] fence languages to render, default ["mermaid"]
  * @param {string} [options.css] replaces the default stylesheet
  * @param {Date} [options.now]
- * @returns {Promise<{bytes: Uint8Array, filename: string, metadata: object, warnings: string[], chapterCount: number, imageCount: number, documentCount: number}>}
+ * @returns {Promise<{bytes: Uint8Array, filename: string, metadata: object, warnings: string[], chapterCount: number, imageCount: number, documentCount: number, diagramCount: number}>}
  */
 export async function markdownToEpub(input, options = {}) {
   if (typeof input !== 'string' && !Array.isArray(input)) {
@@ -141,9 +146,9 @@ export async function markdownToEpub(input, options = {}) {
   const renderer = createRenderer({ typographer: options.typographer !== false });
   const slugger = makeSlugger();
 
-  // Pass 1: parse each document into chapters, sharing one slugger so heading
-  // ids are unique across the whole book.
-  const parsed = [];
+  // Pass 0: read the frontmatter off every document, so diagrams can all be
+  // rendered before any chapter HTML is produced.
+  const prepared = [];
   for (const document of documents) {
     const source = document.markdown.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
     if (!source.trim()) {
@@ -155,8 +160,47 @@ export async function markdownToEpub(input, options = {}) {
     for (const warning of frontmatterWarnings) {
       warnings.push(documents.length > 1 ? `${basenameOf(document.key)}: ${warning}` : warning);
     }
+    prepared.push({ ...document, data, body });
+  }
+  if (!prepared.length) throw new Error('The Markdown produced no content.');
+
+  // Diagrams are rendered once per unique source, so the same diagram repeated
+  // across a folder of documents costs one browser render, not one per copy.
+  const diagrams = new Map();
+  const diagramFiles = [];
+  if (options.renderDiagram) {
+    const unique = new Map();
+    for (const document of prepared) {
+      for (const diagram of findDiagrams(renderer.parse(document.body, {}), options.diagramLanguages)) {
+        if (!unique.has(diagram.hash)) unique.set(diagram.hash, diagram);
+      }
+    }
+    for (const diagram of unique.values()) {
+      try {
+        const image = await options.renderDiagram(diagram.source, { language: diagram.language, hash: diagram.hash });
+        if (!image || !image.bytes || !image.bytes.length) throw new Error('the renderer returned nothing');
+        // Deliberately not passing the declared media type: these bytes come
+        // from a renderer we invoked, so they are checked against the actual
+        // file signature. A truncated render or an error page should become a
+        // code block, not a corrupt image inside the book.
+        const kind = sniffImage(image.bytes);
+        if (!kind) throw new Error('the renderer did not return an image');
+        const path = diagramPath(diagram.hash, kind.ext);
+        diagrams.set(diagram.hash, path);
+        diagramFiles.push({ path, mediaType: kind.mediaType, bytes: image.bytes });
+      } catch (err) {
+        warnings.push(`A ${diagram.language} diagram could not be rendered (${err.message}); it is shown as a code block instead.`);
+      }
+    }
+  }
+
+  // Pass 1: parse each document into chapters, sharing one slugger so heading
+  // ids are unique across the whole book.
+  const parsed = [];
+  for (const document of prepared) {
+    const { data, body } = document;
     const meta = metadataFromFrontmatter(data);
-    const split = splitDocument(body, { splitLevel: splitLevel > 0 ? splitLevel : 0, tocDepth, renderer, slugger });
+    const split = splitDocument(body, { splitLevel: splitLevel > 0 ? splitLevel : 0, tocDepth, renderer, slugger, diagrams });
     if (!split.chapters.length) {
       warnings.push(`${basenameOf(document.key)} produced no content and was left out.`);
       continue;
@@ -214,12 +258,13 @@ export async function markdownToEpub(input, options = {}) {
 
   // Pass 2: collect every image reference, keyed per document so that two
   // documents referencing "./diagram.png" resolve independently.
+  const packagedDiagrams = new Set(diagramFiles.map((file) => file.path));
   const imageReferences = [];
   const seenImages = new Set();
   chapters.forEach((chapter) => {
     htmlToXhtml(chapter.html, {
       rewriteUrl: (tag, attr, value) => {
-        if (tag === 'img' && attr === 'src') {
+        if (tag === 'img' && attr === 'src' && !packagedDiagrams.has(value)) {
           const id = `${chapter.documentKey}${IMAGE_KEY_SEPARATOR}${value}`;
           if (!seenImages.has(id)) {
             seenImages.add(id);
@@ -239,7 +284,7 @@ export async function markdownToEpub(input, options = {}) {
     maxTotalImageBytes: options.maxTotalImageBytes,
   });
   warnings.push(...resolved.warnings);
-  const images = [...resolved.files];
+  const images = [...diagramFiles, ...resolved.files];
 
   let cover = null;
   if (options.cover && options.cover.bytes && options.cover.bytes.length) {
@@ -268,7 +313,10 @@ export async function markdownToEpub(input, options = {}) {
     const filename = chapterFilename(index);
     const bodyXhtml = htmlToXhtml(chapter.html, {
       rewriteUrl: (tag, attr, value) => {
-        if (tag === 'img' && attr === 'src') return resolved.map.get(`${chapter.documentKey}${IMAGE_KEY_SEPARATOR}${value}`) || null;
+        if (tag === 'img' && attr === 'src') {
+          if (packagedDiagrams.has(value)) return value;
+          return resolved.map.get(`${chapter.documentKey}${IMAGE_KEY_SEPARATOR}${value}`) || null;
+        }
 
         if (attr === 'href' && value.startsWith('#')) {
           const target = anchors.get(value.slice(1));
@@ -300,6 +348,7 @@ export async function markdownToEpub(input, options = {}) {
       replaceTag: (tag, attrs) => {
         if (tag !== 'img') return null;
         const src = (attrs.find(([name]) => name === 'src') || [])[1];
+        if (src && packagedDiagrams.has(src.trim())) return null;
         if (src && resolved.map.has(`${chapter.documentKey}${IMAGE_KEY_SEPARATOR}${src.trim()}`)) return null;
         const alt = (attrs.find(([name]) => name === 'alt') || [])[1] || '';
         return alt ? `<span class="md2epub-missing-image">${escapeXml(alt)}</span>` : '';
@@ -372,6 +421,7 @@ ${bodyXhtml}
     warnings,
     chapterCount: packedChapters.length,
     imageCount: images.length + (cover ? 1 : 0),
+    diagramCount: diagramFiles.length,
     documentCount: parsed.length,
   };
 }

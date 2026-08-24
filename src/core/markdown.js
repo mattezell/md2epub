@@ -2,15 +2,48 @@
 
 import MarkdownIt from 'markdown-it';
 import { makeSlugger } from './slug.js';
+import { hashSource, altTextFor, findPreMermaid } from './diagrams.js';
+import { escapeXml, escapeAttr } from './xml.js';
 
 export function createRenderer({ typographer = true, linkify = true, breaks = false } = {}) {
-  return new MarkdownIt({
+  const md = new MarkdownIt({
     html: true,       // raw HTML survives here and is sanitised later by htmlToXhtml
     xhtmlOut: true,
     linkify,
     typographer,
     breaks,
   });
+
+  // A diagram fence becomes an image when env.diagrams carries a rendered file
+  // for it, and stays a code block otherwise, which is also the failure path.
+  const fence = md.renderer.rules.fence.bind(md.renderer.rules);
+  md.renderer.rules.fence = (tokens, index, options, env, self) => {
+    const token = tokens[index];
+    const language = (token.info || '').trim().split(/\s+/)[0].toLowerCase();
+    const rendered = env && env.diagrams && env.diagrams.get(hashSource(`${language}:${token.content}`));
+    if (!rendered) return fence(tokens, index, options, env, self);
+    return `<figure class="md2epub-diagram"><img src="${escapeAttr(rendered)}" alt="${escapeAttr(altTextFor(token.content, language))}" /></figure>\n`;
+  };
+
+  // The same substitution for the raw HTML form.
+  const htmlBlock = md.renderer.rules.html_block
+    ? md.renderer.rules.html_block.bind(md.renderer.rules)
+    : (tokens, index) => tokens[index].content;
+  md.renderer.rules.html_block = (tokens, index, options, env, self) => {
+    const token = tokens[index];
+    if (!env || !env.diagrams || !token.content.includes('mermaid')) {
+      return htmlBlock(tokens, index, options, env, self);
+    }
+    let content = token.content;
+    for (const { source, block } of findPreMermaid(token.content)) {
+      const rendered = env.diagrams.get(hashSource(`mermaid:${source}`));
+      if (!rendered) continue;
+      content = content.replace(block, `<figure class="md2epub-diagram"><img src="${escapeAttr(rendered)}" alt="${escapeAttr(altTextFor(source, 'mermaid'))}" /></figure>`);
+    }
+    return content;
+  };
+
+  return md;
 }
 
 function plainText(inlineToken) {
@@ -35,9 +68,9 @@ function plainText(inlineToken) {
  *
  * @returns {{ chapters: Array, toc: Array, anchors: Map<string, number>, docTitle: string|undefined }}
  */
-export function splitDocument(body, { splitLevel = 1, tocDepth = 3, renderer, slugger: sharedSlugger } = {}) {
+export function splitDocument(body, { splitLevel = 1, tocDepth = 3, renderer, slugger: sharedSlugger, diagrams } = {}) {
   const md = renderer || createRenderer();
-  const env = {};
+  const env = { diagrams };
   const tokens = md.parse(body, env);
   // A bundle shares one slugger across every document, so heading ids stay
   // unique book-wide and a cross document link can find its target.

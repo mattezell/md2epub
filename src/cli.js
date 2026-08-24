@@ -9,6 +9,7 @@ import { readFile, writeFile, readdir, stat } from 'node:fs/promises';
 import { dirname, resolve, relative, isAbsolute, join, basename, sep } from 'node:path';
 import { markdownToEpub, titleFromFilename } from './core/index.js';
 import { createImageFetcher } from './net.js';
+import { createMermaidRenderer, diagramSupport } from './diagrams.js';
 import { buildMailer, loadEnv, EMAIL_SETUP_HINT } from './mail/factory.js';
 import { composeBookEmail } from './mail/message.js';
 
@@ -43,6 +44,10 @@ Conversion:
       --toc-depth <n>    deepest heading in the contents (default 3)
       --no-typographer   keep straight quotes and plain dashes
       --embed-remote     download http(s) images into the book
+      --diagrams         render \`\`\`mermaid fences to images (needs npm run diagrams:install)
+      --diagram-theme <name>   mermaid theme, default neutral (best on e-ink)
+      --diagram-format <fmt>   png (default) or svg
+      --diagram-scale <n>      device pixel ratio, default 2
   -r, --recursive        include Markdown in subdirectories of a given directory
   -h, --help
 
@@ -82,6 +87,10 @@ function parseArgs(argv) {
       case '--toc-depth': opts.tocDepth = Number(next()); break;
       case '--no-typographer': opts.typographer = false; break;
       case '--embed-remote': opts.embedRemoteImages = true; break;
+      case '--diagrams': opts.diagrams = true; break;
+      case '--diagram-theme': opts.diagramTheme = next(); break;
+      case '--diagram-format': opts.diagramFormat = next(); break;
+      case '--diagram-scale': opts.diagramScale = Number(next()); break;
       case '-r': case '--recursive': opts.recursive = true; break;
       default:
         if (arg.startsWith('-') && arg !== '-') throw new Error(`unknown option ${arg}`);
@@ -203,6 +212,20 @@ async function main() {
 
   const cover = opts.cover ? { bytes: new Uint8Array(await readFile(opts.cover)) } : undefined;
 
+  // Asked for explicitly, so a missing toolchain is an error rather than a
+  // quiet fallback to code blocks.
+  let renderDiagram;
+  if (opts.diagrams) {
+    const support = diagramSupport(env);
+    if (!support.available) throw new Error(`--diagrams cannot run here: ${support.reason}`);
+    renderDiagram = createMermaidRenderer({
+      env,
+      theme: opts.diagramTheme,
+      format: opts.diagramFormat,
+      scale: Number.isFinite(opts.diagramScale) ? opts.diagramScale : undefined,
+    });
+  }
+
   const result = await markdownToEpub(documents, {
     title: opts.title || (label ? titleFromFilename(label) : undefined),
     author: opts.authors.length ? opts.authors : undefined,
@@ -218,6 +241,7 @@ async function main() {
     generateCover: opts.generateCover,
     embedRemoteImages: opts.embedRemoteImages,
     fetchImage: opts.embedRemoteImages ? createImageFetcher() : undefined,
+    renderDiagram,
     resolveLocal: createLocalResolver(root),
     ...(documents.length === 1 && documents[0].path !== 'stdin.md' ? { name: documents[0].path } : {}),
   });
@@ -227,6 +251,7 @@ async function main() {
     `${result.documentCount} document(s)`,
     `${result.chapterCount} chapter(s)`,
     `${result.imageCount} image(s)`,
+    ...(result.diagramCount ? [`${result.diagramCount} diagram(s)`] : []),
     `${(result.bytes.length / 1024).toFixed(1)} KB`,
   ].join(', ');
 

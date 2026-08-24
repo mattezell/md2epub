@@ -1,0 +1,245 @@
+// HTTP API, shared by the Node server and the Cloudflare Worker.
+// Hono runs on both, and everything platform specific (mailer, static files,
+// outbound image fetch) is injected, so this file has no runtime imports.
+
+import { Hono } from 'hono';
+import { markdownToEpub, MAX_MARKDOWN_BYTES } from './core/index.js';
+
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/;
+
+const DEFAULTS = {
+  maxMarkdownBytes: MAX_MARKDOWN_BYTES,
+  maxCoverBytes: 12 * 1024 * 1024,
+  allowedRecipients: [],   // empty means any address
+  emailsPerHour: 20,
+  embedRemoteImages: false,
+  // How to switch email on, in the words of whichever runtime is hosting this.
+  emailHelp: '',
+};
+
+class RequestError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const bool = (value, fallback = false) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  return /^(1|true|yes|on)$/i.test(String(value).trim());
+};
+
+const int = (value, fallback) => {
+  const n = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+function clientKey(c) {
+  return (
+    c.req.header('cf-connecting-ip') ||
+    (c.req.header('x-forwarded-for') || '').split(',')[0].trim() ||
+    c.req.header('x-real-ip') ||
+    'local'
+  );
+}
+
+// Fixed window counter. Good enough to stop a runaway script or a stranger
+// using the box as a mail relay; it is not a defence against a determined
+// attacker, which is what MAIL_ALLOWED_RECIPIENTS is for.
+function createRateLimiter(limit, windowMs = 3600_000) {
+  const hits = new Map();
+  return (key, now = Date.now()) => {
+    if (limit <= 0) return { allowed: true, remaining: Infinity };
+    const entry = hits.get(key);
+    if (!entry || now - entry.start >= windowMs) {
+      hits.set(key, { start: now, count: 1 });
+      if (hits.size > 5000) {
+        for (const [k, v] of hits) if (now - v.start >= windowMs) hits.delete(k);
+      }
+      return { allowed: true, remaining: limit - 1 };
+    }
+    entry.count += 1;
+    return { allowed: entry.count <= limit, remaining: Math.max(0, limit - entry.count), retryAfter: Math.ceil((entry.start + windowMs - now) / 1000) };
+  };
+}
+
+async function readForm(c, config) {
+  const contentType = c.req.header('content-type') || '';
+  let fields = {};
+  let markdown;
+  let cover = null;
+  let sourceName = '';
+
+  if (contentType.includes('application/json')) {
+    const body = await c.req.json().catch(() => {
+      throw new RequestError('The request body was not valid JSON.');
+    });
+    fields = body || {};
+    markdown = typeof body.markdown === 'string' ? body.markdown : undefined;
+  } else {
+    const body = await c.req.parseBody({ all: false }).catch(() => {
+      throw new RequestError('The form data could not be read.');
+    });
+    fields = body;
+    const file = body.file;
+    if (file && typeof file === 'object' && typeof file.text === 'function' && file.size > 0) {
+      if (file.size > config.maxMarkdownBytes) {
+        throw new RequestError(`That file is larger than the ${Math.round(config.maxMarkdownBytes / 1048576)} MB limit.`, 413);
+      }
+      markdown = await file.text();
+      sourceName = file.name || '';
+    } else if (typeof body.markdown === 'string' && body.markdown.trim()) {
+      markdown = body.markdown;
+    }
+    const coverFile = body.cover;
+    if (coverFile && typeof coverFile === 'object' && typeof coverFile.arrayBuffer === 'function' && coverFile.size > 0) {
+      if (coverFile.size > config.maxCoverBytes) {
+        throw new RequestError(`The cover image is larger than the ${Math.round(config.maxCoverBytes / 1048576)} MB limit.`, 413);
+      }
+      cover = { bytes: new Uint8Array(await coverFile.arrayBuffer()), mediaType: coverFile.type || undefined };
+    }
+  }
+
+  if (markdown === undefined || !String(markdown).trim()) {
+    throw new RequestError('Paste some Markdown or choose a .md file first.');
+  }
+  if (new TextEncoder().encode(markdown).length > config.maxMarkdownBytes) {
+    throw new RequestError(`That document is larger than the ${Math.round(config.maxMarkdownBytes / 1048576)} MB limit.`, 413);
+  }
+
+  return { fields, markdown, cover, sourceName };
+}
+
+function conversionOptions(fields, cover, config) {
+  const title = String(fields.title || '').trim();
+  return {
+    title: title || undefined,
+    author: String(fields.author || '').trim() || undefined,
+    language: String(fields.language || '').trim() || undefined,
+    publisher: String(fields.publisher || '').trim() || undefined,
+    description: String(fields.description || '').trim() || undefined,
+    rights: String(fields.rights || '').trim() || undefined,
+    subjects: String(fields.subjects || '').trim() || undefined,
+    splitLevel: int(fields.splitLevel, 1),
+    tocDepth: int(fields.tocDepth, 3),
+    typographer: bool(fields.typographer, true),
+    embedRemoteImages: bool(fields.embedRemoteImages, config.embedRemoteImages) && Boolean(config.fetchImage),
+    fetchImage: config.fetchImage,
+    cover,
+  };
+}
+
+function warningsHeader(warnings) {
+  if (!warnings.length) return undefined;
+  const encoded = encodeURIComponent(JSON.stringify(warnings));
+  return encoded.length > 6000 ? encodeURIComponent(JSON.stringify(warnings.slice(0, 5).concat(['(further warnings omitted)']))) : encoded;
+}
+
+const asciiFallback = (name) => name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+
+/**
+ * @param {object} deps
+ * @param {{send: Function, describe: Function, kind: string}|null} [deps.mailer]
+ * @param {object} [deps.config]
+ * @returns {import('hono').Hono}
+ */
+export function createApp({ mailer = null, config: overrides = {} } = {}) {
+  const config = { ...DEFAULTS, ...overrides };
+  const limitEmail = createRateLimiter(config.emailsPerHour);
+  const app = new Hono();
+
+  app.get('/api/health', (c) =>
+    c.json({
+      ok: true,
+      email: mailer ? { configured: true, transport: mailer.kind, describe: mailer.describe() } : { configured: false },
+      limits: {
+        maxMarkdownBytes: config.maxMarkdownBytes,
+        maxCoverBytes: config.maxCoverBytes,
+        emailsPerHour: config.emailsPerHour,
+      },
+      remoteImages: Boolean(config.fetchImage),
+    }));
+
+  app.post('/api/convert', async (c) => {
+    const { fields, markdown, cover } = await readForm(c, config);
+    const result = await markdownToEpub(markdown, conversionOptions(fields, cover, config));
+    const headers = {
+      'Content-Type': 'application/epub+zip',
+      'Content-Disposition': `attachment; filename="${asciiFallback(result.filename)}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
+      'Content-Length': String(result.bytes.length),
+      'Cache-Control': 'no-store',
+      'X-Md2Epub-Title': encodeURIComponent(result.metadata.title),
+      'X-Md2Epub-Chapters': String(result.chapterCount),
+    };
+    const warnings = warningsHeader(result.warnings);
+    if (warnings) headers['X-Md2Epub-Warnings'] = warnings;
+    return c.body(result.bytes, 200, headers);
+  });
+
+  app.post('/api/email', async (c) => {
+    if (!mailer) {
+      const help = config.emailHelp ? ` ${config.emailHelp}` : '';
+      throw new RequestError(`Email delivery is not configured on this server.${help}`, 503);
+    }
+    const { fields, markdown, cover } = await readForm(c, config);
+    const to = String(fields.email || fields.to || '').trim();
+    if (!EMAIL_RE.test(to)) throw new RequestError('That does not look like an email address.');
+    if (config.allowedRecipients.length) {
+      const allowed = config.allowedRecipients.some((rule) =>
+        rule.startsWith('@') ? to.toLowerCase().endsWith(rule.toLowerCase()) : to.toLowerCase() === rule.toLowerCase());
+      if (!allowed) throw new RequestError('This server only sends to approved addresses.', 403);
+    }
+
+    const gate = limitEmail(clientKey(c));
+    if (!gate.allowed) {
+      throw new RequestError(`Too many emails from here. Try again in ${Math.ceil((gate.retryAfter || 3600) / 60)} minutes.`, 429);
+    }
+
+    const result = await markdownToEpub(markdown, conversionOptions(fields, cover, config));
+    const note = String(fields.note || '').trim();
+    const lines = [
+      `"${result.metadata.title}" is attached as an EPUB.`,
+      '',
+      `Chapters: ${result.chapterCount}`,
+      `Size: ${(result.bytes.length / 1024).toFixed(1)} KB`,
+    ];
+    if (note) lines.push('', note);
+    if (result.warnings.length) lines.push('', 'Conversion notes:', ...result.warnings.map((w) => `- ${w}`));
+    lines.push('', 'Converted from Markdown by md2epub.');
+
+    try {
+      const info = await mailer.send({
+        to,
+        subject: String(fields.subject || '').trim() || `EPUB: ${result.metadata.title}`,
+        text: lines.join('\n'),
+        attachments: [{ filename: result.filename, content: result.bytes, contentType: 'application/epub+zip' }],
+      });
+      return c.json({
+        ok: true,
+        to,
+        filename: result.filename,
+        size: result.bytes.length,
+        chapters: result.chapterCount,
+        warnings: result.warnings,
+        messageId: info.messageId,
+        dryRun: mailer.kind === 'log',
+      });
+    } catch (err) {
+      throw new RequestError(`The server could not send the email: ${err.message}`, 502);
+    }
+  });
+
+  app.onError((err, c) => {
+    const status = err instanceof RequestError ? err.status : 500;
+    if (status >= 500) console.error('[md2epub]', err);
+    return c.json({ ok: false, error: err.message || 'Something went wrong.' }, status);
+  });
+
+  app.notFound((c) => (c.req.path.startsWith('/api/')
+    ? c.json({ ok: false, error: 'No such endpoint.' }, 404)
+    : c.text('Not found', 404)));
+
+  return app;
+}
+
+export { RequestError };

@@ -186,3 +186,42 @@ test('unknown api routes answer with json', async () => {
   assert.equal(response.status, 404);
   assert.equal((await response.json()).ok, false);
 });
+
+test('convert: several uploaded files become one book', async () => {
+  const app = createApp({});
+  const data = new FormData();
+  data.append('file', new File(['# Intro\n\nSee [setup](./setup.md).'], 'README.md', { type: 'text/markdown' }));
+  data.append('file', new File(['# Setup\n\nsteps'], 'setup.md', { type: 'text/markdown' }));
+  data.append('title', 'Project Docs');
+  const response = await post(app, '/api/convert', data);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-md2epub-documents'), '2');
+  assert.equal(response.headers.get('x-md2epub-chapters'), '2');
+  const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
+  assert.match(strFromU8(files['EPUB/ch-001.xhtml']), /href="ch-002\.xhtml"/, 'cross document links are rewritten');
+});
+
+test('convert: the total size of several uploads is what counts against the limit', async () => {
+  const app = createApp({ config: { maxMarkdownBytes: 200 } });
+  const data = new FormData();
+  data.append('file', new File([`# A\n\n${'x'.repeat(150)}`], 'a.md', { type: 'text/markdown' }));
+  data.append('file', new File([`# B\n\n${'y'.repeat(150)}`], 'b.md', { type: 'text/markdown' }));
+  const response = await post(app, '/api/convert', data);
+  assert.equal(response.status, 413);
+});
+
+test('convert: a single upload takes its title from the file name', async () => {
+  const app = createApp({});
+  const data = new FormData();
+  data.append('file', new File(['## No H1 here\n\ntext'], '01-design-notes.md', { type: 'text/markdown' }));
+  const response = await post(app, '/api/convert', data);
+  assert.match(response.headers.get('content-disposition'), /design-notes\.epub/);
+});
+
+test('convert: the generated cover can be turned off from the form', async () => {
+  const app = createApp({});
+  const on = await post(app, '/api/convert', form({ markdown: '# T\n\nx' }));
+  assert.ok(unzipSync(new Uint8Array(await on.arrayBuffer()))['EPUB/cover.xhtml']);
+  const off = await post(app, '/api/convert', form({ markdown: '# T\n\nx', generateCover: 'false' }));
+  assert.equal(unzipSync(new Uint8Array(await off.arrayBuffer()))['EPUB/cover.xhtml'], undefined);
+});

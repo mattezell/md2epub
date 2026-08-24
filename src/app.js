@@ -4,6 +4,7 @@
 
 import { Hono } from 'hono';
 import { markdownToEpub, MAX_MARKDOWN_BYTES } from './core/index.js';
+import { composeBookEmail } from './mail/message.js';
 
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/;
 
@@ -77,21 +78,26 @@ async function readForm(c, config) {
     fields = body || {};
     markdown = typeof body.markdown === 'string' ? body.markdown : undefined;
   } else {
-    const body = await c.req.parseBody({ all: false }).catch(() => {
+    // all: true so several files can be uploaded under one field name and
+    // become one book, a folder of project docs being the case that matters.
+    const body = await c.req.parseBody({ all: true }).catch(() => {
       throw new RequestError('The form data could not be read.');
     });
-    fields = body;
-    const file = body.file;
-    if (file && typeof file === 'object' && typeof file.text === 'function' && file.size > 0) {
-      if (file.size > config.maxMarkdownBytes) {
-        throw new RequestError(`That file is larger than the ${Math.round(config.maxMarkdownBytes / 1048576)} MB limit.`, 413);
-      }
-      markdown = await file.text();
-      sourceName = file.name || '';
-    } else if (typeof body.markdown === 'string' && body.markdown.trim()) {
-      markdown = body.markdown;
+    fields = Object.fromEntries(Object.entries(body).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]));
+
+    const uploads = [body.file].flat().filter((file) => file && typeof file === 'object' && typeof file.text === 'function' && file.size > 0);
+    const total = uploads.reduce((sum, file) => sum + file.size, 0);
+    if (total > config.maxMarkdownBytes) {
+      throw new RequestError(`That is larger than the ${Math.round(config.maxMarkdownBytes / 1048576)} MB limit.`, 413);
     }
-    const coverFile = body.cover;
+    if (uploads.length) {
+      markdown = [];
+      for (const file of uploads) markdown.push({ path: file.name || 'document.md', markdown: await file.text() });
+      sourceName = uploads.length === 1 ? uploads[0].name || '' : `${uploads.length} files`;
+    } else if (typeof fields.markdown === 'string' && fields.markdown.trim()) {
+      markdown = fields.markdown;
+    }
+    const coverFile = Array.isArray(body.cover) ? body.cover[0] : body.cover;
     if (coverFile && typeof coverFile === 'object' && typeof coverFile.arrayBuffer === 'function' && coverFile.size > 0) {
       if (coverFile.size > config.maxCoverBytes) {
         throw new RequestError(`The cover image is larger than the ${Math.round(config.maxCoverBytes / 1048576)} MB limit.`, 413);
@@ -100,10 +106,12 @@ async function readForm(c, config) {
     }
   }
 
-  if (markdown === undefined || !String(markdown).trim()) {
-    throw new RequestError('Paste some Markdown or choose a .md file first.');
-  }
-  if (new TextEncoder().encode(markdown).length > config.maxMarkdownBytes) {
+  const empty = markdown === undefined
+    || (typeof markdown === 'string' && !markdown.trim())
+    || (Array.isArray(markdown) && !markdown.some((doc) => doc.markdown.trim()));
+  if (empty) throw new RequestError('Paste some Markdown or choose a .md file first.');
+
+  if (typeof markdown === 'string' && new TextEncoder().encode(markdown).length > config.maxMarkdownBytes) {
     throw new RequestError(`That document is larger than the ${Math.round(config.maxMarkdownBytes / 1048576)} MB limit.`, 413);
   }
 
@@ -123,6 +131,7 @@ function conversionOptions(fields, cover, config) {
     splitLevel: int(fields.splitLevel, 1),
     tocDepth: int(fields.tocDepth, 3),
     typographer: bool(fields.typographer, true),
+    generateCover: bool(fields.generateCover, true),
     embedRemoteImages: bool(fields.embedRemoteImages, config.embedRemoteImages) && Boolean(config.fetchImage),
     fetchImage: config.fetchImage,
     cover,
@@ -170,6 +179,7 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
       'Cache-Control': 'no-store',
       'X-Md2Epub-Title': encodeURIComponent(result.metadata.title),
       'X-Md2Epub-Chapters': String(result.chapterCount),
+      'X-Md2Epub-Documents': String(result.documentCount),
     };
     const warnings = warningsHeader(result.warnings);
     if (warnings) headers['X-Md2Epub-Warnings'] = warnings;
@@ -196,24 +206,10 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
     }
 
     const result = await markdownToEpub(markdown, conversionOptions(fields, cover, config));
-    const note = String(fields.note || '').trim();
-    const lines = [
-      `"${result.metadata.title}" is attached as an EPUB.`,
-      '',
-      `Chapters: ${result.chapterCount}`,
-      `Size: ${(result.bytes.length / 1024).toFixed(1)} KB`,
-    ];
-    if (note) lines.push('', note);
-    if (result.warnings.length) lines.push('', 'Conversion notes:', ...result.warnings.map((w) => `- ${w}`));
-    lines.push('', 'Converted from Markdown by md2epub.');
+    const message = composeBookEmail(result, { note: fields.note, subject: fields.subject });
 
     try {
-      const info = await mailer.send({
-        to,
-        subject: String(fields.subject || '').trim() || `EPUB: ${result.metadata.title}`,
-        text: lines.join('\n'),
-        attachments: [{ filename: result.filename, content: result.bytes, contentType: 'application/epub+zip' }],
-      });
+      const info = await mailer.send({ to, ...message });
       return c.json({
         ok: true,
         to,

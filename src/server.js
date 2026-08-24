@@ -3,23 +3,17 @@
 
 import { serve } from '@hono/node-server';
 import { readFile, stat } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
-import { createSmtpMailer } from './mail/smtp.js';
-import { createLogMailer } from './mail/log.js';
+import { buildMailer, loadEnv, EMAIL_SETUP_HINT } from './mail/factory.js';
 import { createImageFetcher } from './net.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(here, '..');
 const publicDir = join(projectRoot, 'public');
 
-// Node's own .env reader: no dotenv dependency.
-const envFile = process.env.MD2EPUB_ENV_FILE || join(projectRoot, '.env');
-if (existsSync(envFile) && typeof process.loadEnvFile === 'function') {
-  process.loadEnvFile(envFile);
-}
+loadEnv();
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -48,15 +42,6 @@ async function readAsset(name) {
   return body;
 }
 
-export function buildMailer(env = process.env, log = console.log) {
-  const transport = (env.MAIL_TRANSPORT || '').trim().toLowerCase();
-  if (transport === 'log' || transport === 'dry-run') {
-    return createLogMailer({ dir: env.MAIL_OUTBOX || join(projectRoot, '.mail-outbox'), log });
-  }
-  if (transport === 'none') return null;
-  return createSmtpMailer(env);
-}
-
 export function createServerApp({ env = process.env, mailer } = {}) {
   const resolvedMailer = mailer === undefined ? buildMailer(env) : mailer;
   const allowedRecipients = (env.MAIL_ALLOWED_RECIPIENTS || '')
@@ -72,7 +57,7 @@ export function createServerApp({ env = process.env, mailer } = {}) {
       maxMarkdownBytes: Number(env.MAX_MARKDOWN_BYTES || 8 * 1024 * 1024),
       maxCoverBytes: Number(env.MAX_COVER_BYTES || 12 * 1024 * 1024),
       embedRemoteImages: /^(1|true|yes|on)$/i.test(env.EMBED_REMOTE_IMAGES || ''),
-      emailHelp: 'Set SMTP_HOST and MAIL_FROM in .env, then restart.',
+      emailHelp: EMAIL_SETUP_HINT,
       fetchImage: createImageFetcher({ maxBytes: Number(env.MAX_IMAGE_BYTES || 12 * 1024 * 1024) }),
     },
   });

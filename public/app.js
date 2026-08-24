@@ -46,13 +46,18 @@ function updateStats() {
 textarea.addEventListener('input', updateStats);
 updateStats();
 
-// File selection, by click or by drop anywhere on the page.
-function acceptFile(file) {
-  if (!file) return;
+// File selection, by click or by drop anywhere on the page. Several files
+// become one book, so the whole list is kept.
+function acceptFiles(files) {
+  const chosen = [...files].filter((file) => file && file.size >= 0);
+  if (!chosen.length) return;
   const transfer = new DataTransfer();
-  transfer.items.add(file);
+  for (const file of chosen) transfer.items.add(file);
   fileInput.files = transfer.files;
-  fileName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+  const total = chosen.reduce((sum, file) => sum + file.size, 0);
+  fileName.textContent = chosen.length === 1
+    ? `${chosen[0].name} (${(total / 1024).toFixed(1)} KB)`
+    : `${chosen.length} files, ${(total / 1024).toFixed(1)} KB: ${chosen.map((file) => file.name).join(', ')}`;
   fileName.hidden = false;
   showPane('upload');
 }
@@ -65,8 +70,7 @@ dropzone.addEventListener('keydown', (event) => {
   }
 });
 fileInput.addEventListener('change', () => {
-  const file = fileInput.files && fileInput.files[0];
-  if (file) acceptFile(file);
+  if (fileInput.files && fileInput.files.length) acceptFiles(fileInput.files);
 });
 
 for (const type of ['dragenter', 'dragover']) {
@@ -83,8 +87,8 @@ for (const type of ['dragleave', 'drop']) {
   });
 }
 document.addEventListener('drop', (event) => {
-  const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
-  if (file) acceptFile(file);
+  const dropped = event.dataTransfer && event.dataTransfer.files;
+  if (dropped && dropped.length) acceptFiles(dropped);
 });
 
 function report({ ok, title, message, warnings = [] }) {
@@ -118,6 +122,7 @@ function buildFormData() {
   const file = data.get('file');
   if (file && file.size === 0) data.delete('file');
   if (!document.getElementById('typographer').checked) data.set('typographer', 'false');
+  if (!document.getElementById('generateCover').checked) data.set('generateCover', 'false');
   if (!document.getElementById('embedRemoteImages').checked) data.delete('embedRemoteImages');
   return data;
 }
@@ -192,10 +197,12 @@ form.addEventListener('submit', (event) => {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     const chapters = response.headers.get('X-Md2Epub-Chapters');
+    const documents = response.headers.get('X-Md2Epub-Documents');
+    const from = documents && documents !== '1' ? ` from ${documents} documents` : '';
     report({
       ok: true,
       title: 'EPUB ready',
-      message: `${name}, ${(blob.size / 1024).toFixed(1)} KB, ${chapters || '1'} chapter${chapters === '1' ? '' : 's'}. Check your downloads.`,
+      message: `${name}, ${(blob.size / 1024).toFixed(1)} KB, ${chapters || '1'} chapter${chapters === '1' ? '' : 's'}${from}. Check your downloads.`,
       warnings: warningsFrom(response),
     });
   });

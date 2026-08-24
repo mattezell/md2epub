@@ -30,9 +30,9 @@
 
       <div class="pane" id="pane-upload">
         <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Choose a Markdown file">
-          <input type="file" id="file" name="file" accept=".md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain" hidden />
-          <p class="dropzone-title">Drop a Markdown file here</p>
-          <p class="hint">or click to choose one. Up to 8 MB.</p>
+          <input type="file" id="file" name="file" accept=".md,.markdown,.mdown,.mkd,.mdx,.txt,text/markdown,text/plain" multiple hidden />
+          <p class="dropzone-title">Drop Markdown files here</p>
+          <p class="hint">or click to choose them. Several files become one book, a chapter each. Up to 8 MB in total.</p>
           <p class="file-name" id="file-name" hidden></p>
         </div>
       </div>
@@ -74,6 +74,7 @@
           </label>
         </div>
         <label class="check"><input type="checkbox" name="typographer" id="typographer" value="true" checked /> Smart quotes and dashes</label>
+        <label class="check"><input type="checkbox" name="generateCover" id="generateCover" value="true" checked /> Draw a cover when none is uploaded</label>
         <label class="check" id="remote-images-row"><input type="checkbox" name="embedRemoteImages" id="embedRemoteImages" value="true" /> Download images referenced by URL into the book</label>
       </details>
     </section>

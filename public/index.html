@@ -20,12 +20,23 @@
       <div class="tabs" role="tablist">
         <button type="button" class="tab is-active" role="tab" aria-selected="true" data-pane="paste">Paste Markdown</button>
         <button type="button" class="tab" role="tab" aria-selected="false" data-pane="upload">Upload a file</button>
+        <button type="button" class="tab" role="tab" aria-selected="false" data-pane="web" id="tab-web">From the web</button>
       </div>
 
       <div class="pane is-active" id="pane-paste">
         <label class="sr-only" for="markdown">Markdown source</label>
         <textarea id="markdown" name="markdown" spellcheck="false" placeholder="# My Book&#10;&#10;Write or paste Markdown here. YAML frontmatter (title, author, language) is picked up automatically.&#10;&#10;Each level 1 heading starts a new chapter."></textarea>
         <p class="hint" id="paste-stats">0 words</p>
+      </div>
+
+      <div class="pane" id="pane-web">
+        <label class="sr-only" for="urls">Page addresses</label>
+        <textarea id="urls" name="urls" spellcheck="false" rows="5" placeholder="https://example.com/an-article&#10;https://example.com/another&#10;&#10;One URL per line. Each page becomes a chapter; the article is extracted from the page and its images come with it."></textarea>
+        <label class="check" id="karakeep-row" hidden>
+          <input type="checkbox" name="karakeep" id="karakeep" value="true" />
+          <span>Or take the latest from my read-later queue<span id="karakeep-note" class="check-note"></span></span>
+        </label>
+        <label id="karakeep-limit-row" hidden>How many<input type="number" name="karakeepLimit" id="karakeepLimit" value="10" min="1" max="50" /></label>
       </div>
 
       <div class="pane" id="pane-upload">

@@ -10,6 +10,8 @@ import { buildMailer, loadEnv, EMAIL_SETUP_HINT } from './mail/factory.js';
 import { createImageFetcher } from './net.js';
 import { createMermaidRenderer, diagramSupport } from './diagrams.js';
 import { createSvgRasterizer, findChrome } from './chrome.js';
+import { createArticleFetcher } from './article.js';
+import { createKarakeepClient, bookmarkToDocument } from './karakeep.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(here, '..');
@@ -58,6 +60,26 @@ export function createServerApp({ env = process.env, mailer } = {}) {
   // Off only if explicitly disabled: without it a generated cover does not
   // show up on a Kindle at all.
   const rasterizeSvg = /^(0|false|no|off)$/i.test(env.RASTERIZE_COVER || '') ? null : createSvgRasterizer({ env });
+
+  // Web input. The article fetcher uses the same guarded fetch as image
+  // embedding, so a pasted URL cannot probe the private network.
+  const fetchArticle = createArticleFetcher();
+  const karakeepClient = createKarakeepClient({ env });
+  const karakeep = karakeepClient && {
+    describe: () => karakeepClient.describe(),
+    async documents({ limit = 10 } = {}) {
+      const bookmarks = await karakeepClient.list({ limit, skipTag: env.KARAKEEP_SKIP_TAG || 'epubbed' });
+      const documents = [];
+      for (const [index, bookmark] of bookmarks.entries()) {
+        try {
+          documents.push(await bookmarkToDocument(karakeepClient, bookmark, index));
+        } catch {
+          // A bookmark Karakeep has not crawled yet is skipped, not fatal.
+        }
+      }
+      return documents;
+    },
+  };
   const allowedRecipients = (env.MAIL_ALLOWED_RECIPIENTS || '')
     .split(',')
     .map((value) => value.trim())
@@ -76,6 +98,8 @@ export function createServerApp({ env = process.env, mailer } = {}) {
       renderDiagrams: Boolean(renderDiagram),
       diagramsUnavailable,
       rasterizeSvg,
+      fetchArticle,
+      karakeep,
       fetchImage: createImageFetcher({ maxBytes: Number(env.MAX_IMAGE_BYTES || 12 * 1024 * 1024) }),
     },
   });
@@ -93,13 +117,13 @@ export function createServerApp({ env = process.env, mailer } = {}) {
     });
   });
 
-  return { app, mailer: resolvedMailer, renderDiagram, rasterizeSvg, diagramsUnavailable };
+  return { app, mailer: resolvedMailer, renderDiagram, rasterizeSvg, diagramsUnavailable, fetchArticle, karakeep };
 }
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 
 if (isMain) {
-  const { app, mailer, renderDiagram, rasterizeSvg, diagramsUnavailable } = createServerApp();
+  const { app, mailer, renderDiagram, rasterizeSvg, diagramsUnavailable, karakeep } = createServerApp();
   const port = Number(process.env.PORT || 8787);
   const hostname = process.env.HOST || '127.0.0.1';
 
@@ -110,6 +134,7 @@ if (isMain) {
     // Always said, not only when switched on: a silent absence is what made
     // this hard to work out from the outside.
     console.log(`[md2epub] diagrams: ${renderDiagram ? `on, via ${findChrome()}` : `off, ${diagramsUnavailable}`}`);
+    console.log(`[md2epub] web: urls on${karakeep ? `, karakeep ${karakeep.describe()}` : ', karakeep not configured'}`);
     if (dev) console.log('[md2epub] dev mode: static files are re-read on every request');
   });
 }

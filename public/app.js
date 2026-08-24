@@ -18,6 +18,12 @@ const resultTitle = document.getElementById('result-title');
 const resultBody = document.getElementById('result-body');
 const resultWarnings = document.getElementById('result-warnings');
 const pasteStats = document.getElementById('paste-stats');
+const urlsInput = document.getElementById('urls');
+const karakeepRow = document.getElementById('karakeep-row');
+const karakeepNote = document.getElementById('karakeep-note');
+const karakeepToggle = document.getElementById('karakeep');
+const karakeepLimitRow = document.getElementById('karakeep-limit-row');
+const webTab = document.getElementById('tab-web');
 
 let activePane = 'paste';
 
@@ -117,8 +123,19 @@ function buildFormData() {
   const data = new FormData(form);
   // Only send the input the visitor is actually using, so a stale file does not
   // silently win over freshly pasted text (or the other way round).
-  if (activePane === 'paste') data.delete('file');
-  else data.delete('markdown');
+  // Only the active tab's input is sent, so a stale value in another tab
+  // cannot silently win.
+  if (activePane !== 'paste') data.delete('markdown');
+  if (activePane !== 'upload') data.delete('file');
+  if (activePane !== 'web') {
+    data.delete('urls');
+    data.delete('karakeep');
+    data.delete('karakeepLimit');
+  } else {
+    data.set('fromWeb', 'true');
+    if (karakeepToggle.checked) data.delete('urls');
+    else data.delete('karakeep');
+  }
   if (!data.get('email')) data.delete('email');
   const cover = data.get('cover');
   if (cover && cover.size === 0) data.delete('cover');
@@ -136,7 +153,13 @@ function buildFormData() {
 function hasSource(data) {
   const file = data.get('file');
   const markdown = data.get('markdown');
-  return Boolean((file && file.size > 0) || (markdown && String(markdown).trim()));
+  const urls = data.get('urls');
+  return Boolean(
+    (file && file.size > 0)
+    || (markdown && String(markdown).trim())
+    || (urls && String(urls).trim())
+    || data.get('karakeep'),
+  );
 }
 
 async function errorFrom(response) {
@@ -186,7 +209,7 @@ form.addEventListener('submit', (event) => {
   event.preventDefault();
   const data = buildFormData();
   if (!hasSource(data)) {
-    report({ ok: false, title: 'Nothing to convert', message: 'Paste some Markdown or choose a file first.' });
+    report({ ok: false, title: 'Nothing to convert', message: 'Paste some Markdown, choose a file, or give a URL first.' });
     return;
   }
   withBusy(downloadBtn, 'Converting...', async () => {
@@ -219,7 +242,7 @@ form.addEventListener('submit', (event) => {
 emailBtn.addEventListener('click', () => {
   const data = buildFormData();
   if (!hasSource(data)) {
-    report({ ok: false, title: 'Nothing to convert', message: 'Paste some Markdown or choose a file first.' });
+    report({ ok: false, title: 'Nothing to convert', message: 'Paste some Markdown, choose a file, or give a URL first.' });
     return;
   }
   if (!emailInput.value.trim()) {
@@ -266,6 +289,17 @@ fetch('/api/health')
     if (!health.remoteImages) remoteImagesRow.hidden = true;
     // Left visible but disabled when the server cannot render: a control that
     // simply vanishes is worse than one that says why it is unavailable.
+    if (!health.urls) {
+      webTab.hidden = true;
+    }
+    if (health.karakeep) {
+      karakeepRow.hidden = false;
+      karakeepLimitRow.hidden = false;
+      karakeepNote.textContent = 'Newest first, skipping anything already sent.';
+      karakeepToggle.addEventListener('change', () => {
+        urlsInput.disabled = karakeepToggle.checked;
+      });
+    }
     if (!health.diagrams) {
       diagramsToggle.checked = false;
       diagramsToggle.disabled = true;

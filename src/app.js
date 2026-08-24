@@ -5,6 +5,7 @@
 import { Hono } from 'hono';
 import { markdownToEpub, MAX_MARKDOWN_BYTES } from './core/index.js';
 import { composeBookEmail } from './mail/message.js';
+import { articleToDocument } from './article.js';
 
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/;
 
@@ -16,6 +17,10 @@ const DEFAULTS = {
   embedRemoteImages: false,
   renderDiagrams: false,
   diagramsUnavailable: 'this server has no diagram renderer',
+  // Web input, injected by the runtime that can reach the network safely.
+  fetchArticle: null,
+  karakeep: null,
+  maxUrls: 20,
   // How to switch email on, in the words of whichever runtime is hosting this.
   emailHelp: '',
 };
@@ -108,6 +113,28 @@ async function readForm(c, config) {
     }
   }
 
+  // Web input: a list of URLs, or the read-later queue.
+  const urlList = String(fields.urls || '').split(/[\s,]+/).map((u) => u.trim()).filter(Boolean);
+  if (urlList.length && markdown === undefined) {
+    if (!config.fetchArticle) throw new RequestError('This server cannot fetch web pages.', 503);
+    if (urlList.length > config.maxUrls) throw new RequestError(`That is more than ${config.maxUrls} URLs.`);
+    const bad = urlList.find((u) => !/^https?:\/\//i.test(u));
+    if (bad) throw new RequestError(`${bad} is not an http or https URL.`);
+    markdown = [];
+    for (const [index, url] of urlList.entries()) {
+      try {
+        const article = await config.fetchArticle(url);
+        markdown.push(articleToDocument(article, { url: article.url, path: `${String(index + 1).padStart(3, '0')}-article.md` }));
+      } catch (err) {
+        throw new RequestError(`${url} could not be read: ${err.message}`);
+      }
+    }
+  } else if (bool(fields.karakeep, false) && markdown === undefined) {
+    if (!config.karakeep) throw new RequestError('This server has no Karakeep connection.', 503);
+    markdown = await config.karakeep.documents({ limit: int(fields.karakeepLimit, 10) });
+    if (!markdown.length) throw new RequestError('No bookmarks matched, or none has been crawled yet.');
+  }
+
   const empty = markdown === undefined
     || (typeof markdown === 'string' && !markdown.trim())
     || (Array.isArray(markdown) && !markdown.some((doc) => doc.markdown.trim()));
@@ -145,7 +172,7 @@ function conversionOptions(fields, cover, config) {
     tocDepth: int(fields.tocDepth, 3),
     typographer: bool(fields.typographer, true),
     generateCover: bool(fields.generateCover, true),
-    embedRemoteImages: bool(fields.embedRemoteImages, config.embedRemoteImages) && Boolean(config.fetchImage),
+    embedRemoteImages: (bool(fields.embedRemoteImages, config.embedRemoteImages) || bool(fields.fromWeb, false)) && Boolean(config.fetchImage),
     fetchImage: config.fetchImage,
     renderDiagram: bool(fields.renderDiagrams, config.renderDiagrams) ? config.renderDiagram : undefined,
     rasterizeSvg: config.rasterizeSvg,
@@ -182,6 +209,8 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
         emailsPerHour: config.emailsPerHour,
       },
       remoteImages: Boolean(config.fetchImage),
+      urls: Boolean(config.fetchArticle),
+      karakeep: Boolean(config.karakeep),
       diagrams: Boolean(config.renderDiagram),
       diagramsUnavailable: config.renderDiagram ? null : config.diagramsUnavailable,
     }));

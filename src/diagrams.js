@@ -17,27 +17,10 @@ import { existsSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findChrome } from './chrome.js';
 
 const run = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-
-// Ordered by how likely each is to be the browser someone actually has.
-const CHROME_CANDIDATES = [
-  '/opt/google/chrome/chrome',
-  '/usr/bin/google-chrome',
-  '/usr/bin/google-chrome-stable',
-  '/usr/bin/chromium',
-  '/usr/bin/chromium-browser',
-  '/snap/bin/chromium',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-];
-
-export function findChrome(env = process.env) {
-  const declared = (env.CHROME_PATH || env.PUPPETEER_EXECUTABLE_PATH || '').trim();
-  if (declared) return existsSync(declared) ? declared : null;
-  return CHROME_CANDIDATES.find((path) => existsSync(path)) || null;
-}
 
 export function findMermaidCli(env = process.env) {
   const declared = (env.MD2EPUB_MMDC || '').trim();
@@ -50,6 +33,8 @@ export function findMermaidCli(env = process.env) {
   ];
   return candidates.find((path) => existsSync(path)) || null;
 }
+
+export { findChrome };
 
 /** What the caller needs to hear when diagrams cannot be rendered here. */
 export function diagramSupport(env = process.env) {

@@ -122,6 +122,9 @@ function normaliseDocuments(input) {
  * @param {boolean} [options.typographer] smart quotes and dashes, default true
  * @param {{bytes: Uint8Array, mediaType?: string}} [options.cover] an image to use as the cover
  * @param {boolean} [options.generateCover] draw a cover when none is supplied, default true
+ * @param {(svg: Uint8Array, size: {width: number, height: number}) => Promise<{bytes: Uint8Array, mediaType: string}|null>} [options.rasterizeSvg]
+ *   Turns an SVG cover into a raster one. Kindle shows a generic placeholder
+ *   for an SVG cover, so without this a generated cover does not appear there.
  * @param {boolean} [options.embedRemoteImages] fetch http(s) images into the book
  * @param {(url: string) => Promise<{bytes: Uint8Array, declaredType?: string}|null>} [options.fetchImage]
  * @param {(path: string, from?: string) => Promise<{bytes: Uint8Array, declaredType?: string}|null>} [options.resolveLocal]
@@ -286,13 +289,34 @@ export async function markdownToEpub(input, options = {}) {
   warnings.push(...resolved.warnings);
   const images = [...diagramFiles, ...resolved.files];
 
+  // An SVG cover is valid EPUB, and Kindle still shows the generic grey
+  // placeholder instead of it, so it is rasterised when a browser is available.
+  const toRaster = async (image, size) => {
+    if (image.mediaType !== 'image/svg+xml') return image;
+    // No rasteriser configured is a fact about the environment, not about this
+    // document, so it is the front end's job to mention it, not a per book
+    // warning on every conversion.
+    if (!options.rasterizeSvg) return image;
+    try {
+      const raster = await options.rasterizeSvg(image.bytes, size);
+      if (!raster || !raster.bytes || !raster.bytes.length) throw new Error('nothing came back');
+      const kind = sniffImage(raster.bytes);
+      if (!kind) throw new Error('the result was not an image');
+      return { bytes: raster.bytes, mediaType: kind.mediaType, ext: kind.ext };
+    } catch (err) {
+      warnings.push(`The cover could not be converted from SVG to PNG (${err.message}); it is left as an SVG, which some readers will not show.`);
+      return image;
+    }
+  };
+
   let cover = null;
   if (options.cover && options.cover.bytes && options.cover.bytes.length) {
     const kind = sniffImage(options.cover.bytes, options.cover.mediaType);
     if (kind) {
+      const image = await toRaster({ bytes: options.cover.bytes, mediaType: kind.mediaType, ext: kind.ext }, {});
       // Kept out of `images`: packEpub writes it and the package document
       // declares it separately, and declaring one file twice is an EPUB error.
-      cover = { path: `images/cover.${kind.ext}`, mediaType: kind.mediaType, bytes: options.cover.bytes };
+      cover = { path: `images/cover.${image.ext}`, mediaType: image.mediaType, bytes: image.bytes };
     } else {
       warnings.push('The cover image was not a PNG, JPEG, GIF, WebP or SVG file and has been left out.');
     }
@@ -303,7 +327,8 @@ export async function markdownToEpub(input, options = {}) {
       date: metadata.date || (options.now instanceof Date ? options.now : new Date()).toISOString().slice(0, 10),
       subtitle: multi ? `${parsed.length} documents` : '',
     });
-    cover = { path: `images/cover.${drawn.ext}`, mediaType: drawn.mediaType, bytes: drawn.bytes };
+    const image = await toRaster(drawn, { width: drawn.width, height: drawn.height });
+    cover = { path: `images/cover.${image.ext}`, mediaType: image.mediaType, bytes: image.bytes };
   }
 
   // Pass 3: rewrite links and images, then wrap each chapter in an XHTML document.

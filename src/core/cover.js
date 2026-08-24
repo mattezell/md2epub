@@ -50,13 +50,16 @@ export function generateCover({ title, authors = [], date = '', subtitle = '' })
   lines = lines.slice(0, 6);
 
   const blockHeight = lines.length * titleSize * 1.22;
-  const titleTop = Math.max(HEIGHT * 0.3, HEIGHT * 0.42 - blockHeight / 2);
+  const titleTop = Math.max(HEIGHT * 0.26, HEIGHT * 0.38 - blockHeight / 2);
 
   const titleSpans = lines
     .map((line, index) => `      <tspan x="${margin}" y="${Math.round(titleTop + index * titleSize * 1.22)}">${escapeXml(line)}</tspan>`)
     .join('\n');
 
-  const bylineY = Math.round(titleTop + blockHeight + 120);
+  // The byline sits low, the way it does on a printed cover, rather than
+  // tucked under the title with the whole lower half left empty. A very long
+  // title pushes it down instead of running into it.
+  const bylineY = Math.round(Math.max(titleTop + blockHeight + 110, HEIGHT * 0.72));
   const byline = authors.length
     ? `  <text x="${margin}" y="${bylineY}" font-family="Georgia, 'Times New Roman', serif" font-size="62" fill="#c9c4ba">${escapeXml(authors.join(', '))}</text>`
     : '';
@@ -66,8 +69,9 @@ export function generateCover({ title, authors = [], date = '', subtitle = '' })
     ? `  <text x="${margin}" y="${subtitleY}" font-family="Georgia, 'Times New Roman', serif" font-size="46" fill="#9b958a">${escapeXml(subtitle.slice(0, 90))}</text>`
     : '';
 
+  // Clear of the border, which the baseline used to sit exactly on.
   const footer = date
-    ? `  <text x="${margin}" y="${HEIGHT - margin}" font-family="Georgia, 'Times New Roman', serif" font-size="44" fill="#8a857c">${escapeXml(date)}</text>`
+    ? `  <text x="${margin}" y="${HEIGHT - margin - 70}" font-family="Georgia, 'Times New Roman', serif" font-size="44" fill="#8a857c">${escapeXml(date)}</text>`
     : '';
 
   const svg = `<?xml version="1.0" encoding="utf-8"?>
@@ -84,5 +88,5 @@ ${footer}
 </svg>
 `;
 
-  return { bytes: new TextEncoder().encode(svg), mediaType: 'image/svg+xml', ext: 'svg' };
+  return { bytes: new TextEncoder().encode(svg), mediaType: 'image/svg+xml', ext: 'svg', width: WIDTH, height: HEIGHT };
 }

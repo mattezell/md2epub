@@ -119,7 +119,10 @@ export function createServerApp({ env = process.env, mailer } = {}) {
     const ext = name.slice(name.lastIndexOf('.'));
     return c.body(body, 200, {
       'Content-Type': CONTENT_TYPES[ext] || 'application/octet-stream',
-      'Cache-Control': dev ? 'no-store' : 'public, max-age=300',
+      // Revalidate every time. The portal is a handful of small files on a
+      // tailnet, so the bytes are worth nothing, while a cached page after a
+      // restart looks exactly like a feature that failed to turn on.
+      'Cache-Control': dev ? 'no-store' : 'no-cache',
     });
   });
 

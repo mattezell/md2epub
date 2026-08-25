@@ -286,13 +286,14 @@ fetch('/api/health')
       emailBtn.disabled = true;
       emailInput.disabled = true;
     }
-    if (!health.remoteImages) remoteImagesRow.hidden = true;
+    if (remoteImagesRow && !health.remoteImages) remoteImagesRow.hidden = true;
     // Left visible but disabled when the server cannot render: a control that
     // simply vanishes is worse than one that says why it is unavailable.
-    if (!health.urls) {
-      webTab.hidden = true;
-    }
-    if (health.karakeep) {
+    // A browser holding a cached copy of an older page will not have these
+    // elements. Throwing here would kill the whole capability handler and make
+    // every control look broken, so each one is optional.
+    if (webTab && !health.urls) webTab.hidden = true;
+    if (karakeepRow && health.karakeep) {
       karakeepRow.hidden = false;
       karakeepLimitRow.hidden = false;
       karakeepNote.textContent = 'Newest first, skipping anything already sent.';
@@ -300,7 +301,7 @@ fetch('/api/health')
         urlsInput.disabled = karakeepToggle.checked;
       });
     }
-    if (!health.diagrams) {
+    if (diagramsRow && !health.diagrams) {
       diagramsToggle.checked = false;
       diagramsToggle.disabled = true;
       diagramsNote.textContent = health.diagramsUnavailable

@@ -233,3 +233,41 @@ test('page: the diagram control is usable where the server can render', async ()
   assert.equal($(doc, 'renderDiagrams').checked, true);
   assert.equal($(doc, 'diagrams-note').textContent, '');
 });
+
+test('page: the read-later control appears when the server has Karakeep', async () => {
+  const { doc, win } = await boot({
+    health: { ok: true, email: { configured: false }, remoteImages: false, diagrams: false, urls: true, karakeep: true },
+  });
+  assert.equal($(doc, 'karakeep-row').hidden, false);
+  assert.equal($(doc, 'karakeep-limit-row').hidden, false);
+  assert.match($(doc, 'karakeep-note').textContent, /Newest first/);
+  // It lives inside the web tab, so it is only on screen once that is chosen.
+  const webTab = [...doc.querySelectorAll('.tab')].find((t) => t.dataset.pane === 'web');
+  webTab.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  assert.equal($(doc, 'pane-web').classList.contains('is-active'), true);
+});
+
+test('page: without Karakeep the control stays hidden and the web tab still works', async () => {
+  const { doc } = await boot({
+    health: { ok: true, email: { configured: false }, remoteImages: false, diagrams: false, urls: true, karakeep: false },
+  });
+  assert.equal($(doc, 'karakeep-row').hidden, true);
+  assert.equal($(doc, 'tab-web').hidden, false, 'URL input does not depend on Karakeep');
+});
+
+test('page: a stale cached page does not break the capability wiring', async () => {
+  // What a browser holding yesterday's HTML has: no web tab, no diagram row.
+  const stripped = html
+    .replace(/<button[^>]*id="tab-web"[\s\S]*?<\/button>/, '')
+    .replace(/<label class="check" id="diagrams-row"[\s\S]*?<\/label>/, '');
+  const dom = new JSDOM(stripped, { url: 'http://localhost:8787/', runScripts: 'dangerously', virtualConsole: new VirtualConsole() });
+  const win = dom.window;
+  win.fetch = async (url) => (url === '/api/health'
+    ? new Response(JSON.stringify({ ok: true, email: { configured: true, transport: 'smtp', describe: 'x' }, remoteImages: true, diagrams: false, urls: true, karakeep: true }), { headers: { 'content-type': 'application/json' } })
+    : new Response('{}'));
+  win.Element.prototype.scrollIntoView = () => {};
+  win.eval(script);
+  await new Promise((r) => setTimeout(r, 10));
+  // The handler survived: the email status was still filled in.
+  assert.match(win.document.getElementById('email-status').textContent, /Email is configured/);
+});

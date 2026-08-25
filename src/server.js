@@ -68,11 +68,17 @@ export function createServerApp({ env = process.env, mailer } = {}) {
   const karakeep = karakeepClient && {
     describe: () => karakeepClient.describe(),
     async documents({ limit = 10 } = {}) {
-      const bookmarks = await karakeepClient.list({ limit, skipTag: env.KARAKEEP_SKIP_TAG || 'epubbed' });
+      // Over-fetch: many saved links cannot be crawled, and the limit should
+      // mean readable articles rather than attempts.
+      const candidates = await karakeepClient.list({
+        limit: Math.min(limit * 4 + 5, 200),
+        skipTag: env.KARAKEEP_SKIP_TAG || 'epubbed',
+      });
       const documents = [];
-      for (const [index, bookmark] of bookmarks.entries()) {
+      for (const bookmark of candidates) {
+        if (documents.length >= limit) break;
         try {
-          documents.push(await bookmarkToDocument(karakeepClient, bookmark, index));
+          documents.push(await bookmarkToDocument(karakeepClient, bookmark, documents.length));
         } catch {
           // A bookmark Karakeep has not crawled yet is skipped, not fatal.
         }

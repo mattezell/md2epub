@@ -167,25 +167,34 @@ async function collectKarakeep(opts, env) {
   const client = createKarakeepClient({ env });
   if (!client) throw new Error('--karakeep needs KARAKEEP_URL and KARAKEEP_API_KEY (see .env.example)');
   const skipTag = opts.skipTag === undefined ? DEFAULT_MARK_TAG : opts.skipTag;
-  const bookmarks = await client.list({
-    limit: Number.isFinite(opts.limit) ? opts.limit : 10,
+  const want = Number.isFinite(opts.limit) ? opts.limit : 10;
+  // Ask for more candidates than are wanted: plenty of saved links are things
+  // Karakeep cannot crawl (X posts, paywalls), and --limit should mean "this
+  // many readable articles", not "this many attempts".
+  const candidates = await client.list({
+    limit: Math.min(want * 4 + 5, 200),
     skipTag: skipTag || undefined,
     requireTag: opts.requireTag,
   });
-  if (!bookmarks.length) throw new Error('no bookmarks matched (everything may already be tagged)');
+  if (!candidates.length) throw new Error('no bookmarks matched (everything may already be tagged)');
 
   const documents = [];
   const used = [];
-  for (const [index, bookmark] of bookmarks.entries()) {
+  let skipped = 0;
+  for (const bookmark of candidates) {
+    if (documents.length >= want) break;
     try {
-      documents.push(await bookmarkToDocument(client, bookmark, index));
+      documents.push(await bookmarkToDocument(client, bookmark, documents.length));
       used.push(bookmark);
       process.stderr.write(`queued: ${(bookmark.title || (bookmark.content || {}).title || bookmark.id).slice(0, 70)}\n`);
-    } catch (err) {
-      process.stderr.write(`skipped: ${(bookmark.content || {}).url || bookmark.id} (${err.message})\n`);
+    } catch {
+      skipped += 1;
     }
   }
-  if (!documents.length) throw new Error('none of the matching bookmarks had a crawled article yet');
+  if (skipped) process.stderr.write(`note: skipped ${skipped} bookmark(s) with no crawled article (X posts and paywalled pages usually)\n`);
+  if (!documents.length) {
+    throw new Error(`none of the ${candidates.length} matching bookmarks had a crawled article yet`);
+  }
   return { documents, client, bookmarks: used };
 }
 

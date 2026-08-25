@@ -21,6 +21,7 @@ That is the whole download path. Email needs a few more lines of config, below.
 npm test                       # 144 tests: converter, API, guards, web input and the portal
 npm run epubcheck:install      # fetches EPUBCheck into tools/ (needs java + unzip)
 npm run diagrams:install       # optional: mermaid rendering (see Diagrams below)
+npm run skill:install          # optional: the agent skill, for Claude Code sessions
 npm run validate               # converts every fixture and runs EPUBCheck over it
 ```
 
@@ -83,6 +84,16 @@ The address in `MAIL_FROM` must be on your Amazon Approved Personal Document
 E-mail List or the message is dropped, usually without a bounce. Amazon's limit
 is 50 MB per email; converted Markdown lands between 3 KB and 100 KB.
 [docs/EMAIL-SETUP.md](docs/EMAIL-SETUP.md) has the details.
+
+## From an agent session
+
+`npm run skill:install` links `skills/send-to-kindle` into `~/.claude/skills`,
+so any Claude Code session, in any repo, can act on "send that to my kindle"
+without being told how. The skill covers the commands, the confirm-before-
+sending rule, and what the failure messages mean.
+
+It is installed for every session on purpose rather than as a project skill:
+the document worth sending is almost always in some other repo.
 
 ## Command line
 
@@ -297,6 +308,7 @@ src/server.js Node entry: static files, .env, SMTP
 src/worker.js Cloudflare entry: assets binding, HTTP mail
 src/cli.js    command line
 src/mail/     transports (SMTP, HTTP, dry run) and the shared message body
+skills/       the send-to-kindle agent skill
 src/article.js   web pages: extraction and HTML to Markdown
 src/karakeep.js  the read-later queue as input
 src/chrome.js    finding and driving the local browser

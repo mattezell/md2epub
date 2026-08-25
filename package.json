@@ -17,7 +17,8 @@
     "validate": "node scripts/validate.mjs",
     "epubcheck:install": "node scripts/install-epubcheck.mjs",
     "kindle": "node src/cli.js --kindle",
-    "diagrams:install": "node scripts/install-mermaid.mjs"
+    "diagrams:install": "node scripts/install-mermaid.mjs",
+    "skill:install": "node scripts/install-skill.mjs"
   },
   "engines": {
     "node": ">=20"

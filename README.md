@@ -337,7 +337,7 @@ weight and not everyone needs them.
 |---|---|---|
 | `slim` | 286 MB | Conversion, email. **Covers stay SVG**, which Kindle does not display |
 | `default` | 1.7 GB | + Chromium and fonts: PNG covers |
-| `full` | larger again | + mermaid diagrams |
+| `full` | 2.3 GB | + mermaid diagrams |
 
 ```bash
 docker build -t md2epub .                     # default

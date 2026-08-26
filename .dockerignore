@@ -1,0 +1,10 @@
+node_modules
+tools
+.git
+.env
+.mail-outbox
+.validate-out
+.wrangler
+*.epub
+test/fixtures/*.epub
+npm-debug.log*

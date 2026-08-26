@@ -1,0 +1,38 @@
+# md2epub. Start with nothing configured:
+#
+#   docker compose up
+#
+# That gives a working converter on http://localhost:8787 with downloads only.
+# To email books, copy .env.example to .env and fill in the SMTP block; the
+# portal enables its email controls by itself once it can see them.
+
+services:
+  md2epub:
+    # Swap for md2epub:slim (no browser, SVG covers Kindle will not show) or
+    # build the full tier for mermaid diagrams:
+    #   docker compose build --build-arg TARGET=full
+    build:
+      context: .
+      target: ${MD2EPUB_TARGET:-default}
+    image: md2epub:${MD2EPUB_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${MD2EPUB_PORT:-8787}:8787"
+    env_file:
+      # Optional: everything works without it, minus email.
+      - path: .env
+        required: false
+    environment:
+      HOST: 0.0.0.0
+    volumes:
+      # Rendered diagrams and covers are cached by content, so a restart does
+      # not re-render everything.
+      - md2epub-cache:/app/.cache
+    tmpfs:
+      # Chromium and the converter only ever need scratch space.
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  md2epub-cache:

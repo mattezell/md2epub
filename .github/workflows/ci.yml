@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Tests and EPUBCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # EPUBCheck is a Java program, and it is what turns "valid EPUB" from a
+      # claim into a check.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - run: npm ci
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Install EPUBCheck
+        run: npm run epubcheck:install
+
+      # Chrome is on the GitHub runner already: it rasterises the cover, so the
+      # fixtures are validated the way they are actually produced.
+      - name: Validate every fixture against EPUBCheck
+        run: npm run validate
+
+  diagrams:
+    name: Diagram rendering
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+
+      # Half a gigabyte, so it is a separate job rather than a tax on every run.
+      - name: Install the mermaid toolchain
+        run: npm run diagrams:install
+
+      - run: npm run epubcheck:install
+      - name: Validate with diagrams rendered
+        run: npm run validate
+
+  docker:
+    name: Container images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build slim
+        run: docker build --target slim -t md2epub:slim .
+
+      - name: Build default
+        run: docker build --target default -t md2epub:ci .
+
+      # A container that starts but cannot convert is not worth shipping, and a
+      # container without fonts silently renders non-Latin titles as boxes.
+      - name: The container converts, and its covers are not tofu
+        run: |
+          docker run -d --rm --name md2epub-ci -p 8787:8787 md2epub:ci
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8787/api/health && break; sleep 1; done
+          curl -sf -o book.epub \
+            -F 'markdown=# Container check' \
+            -F 'title=Container check' \
+            http://127.0.0.1:8787/api/convert
+          unzip -l book.epub | grep -q 'EPUB/images/cover.png' \
+            || { echo 'cover was not rasterised to PNG'; exit 1; }
+          docker exec md2epub-ci sh -c 'fc-list :lang=ja | head -1 | grep -q .' \
+            || { echo 'no Japanese-capable font in the image'; exit 1; }
+          docker stop md2epub-ci

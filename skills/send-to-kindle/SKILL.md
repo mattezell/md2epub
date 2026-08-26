@@ -1,15 +1,17 @@
 ---
 name: send-to-kindle
-description: Convert a Markdown document, a folder of docs, or a web page to EPUB and email it to Matt's Kindle. Use when Matt says "send that to my kindle", "make that a book", "I want to read this on my kindle", or asks for a document to be turned into an epub. Also covers reading his Karakeep read-later queue as a book.
+description: Convert a Markdown document, a folder of docs, or a web page to EPUB and email it to a Kindle. Use when the user says "send that to my kindle", "make that a book", "I want to read this on my kindle", or asks for a document to be turned into an epub. Also covers reading a Karakeep read-later queue as a book.
 ---
 
 # send-to-kindle
 
-Matt reads long documents on a waterproof Kindle, away from the desk. This turns
-anything he has been working on into a book and mails it to the device.
+A long document is easier to read on a Kindle than on a laptop. This turns one
+into a book and mails it to the device.
 
-The tool is `md2epub` (`~/w/md2epub`, on PATH). It is already configured: SMTP,
-his `@kindle.com` address and diagram rendering all live in `~/w/md2epub/.env`.
+The tool is `md2epub`. If it is not on PATH, run it as
+`node <checkout>/src/cli.js` instead. Its configuration (SMTP, the `@kindle.com`
+address as `KINDLE_ADDRESS`, diagram rendering) lives in a `.env` beside the
+checkout, and is read no matter which directory you run from.
 
 ## The command
 
@@ -36,8 +38,8 @@ one long document), `--no-images`, `--no-cover`.
 ## Ask before sending
 
 Sending is outward facing and cannot be recalled, so **confirm the document and
-say what will be sent before running it with `--kindle`**, unless Matt has just
-asked for that exact document in the current turn.
+say what will be sent before running it with `--kindle`**, unless the user has
+just asked for that exact document in the current turn.
 
 Two things to check first:
 
@@ -65,13 +67,13 @@ still valid and was still sent.
 
 ## When it does not work
 
-- **"email is not configured"** - `~/w/md2epub/.env` is missing `SMTP_HOST` or
-  `MAIL_FROM`. `node ~/w/md2epub/scripts/mail-check.mjs` diagnoses it, and
-  `~/w/md2epub/docs/EMAIL-SETUP.md` is the full guide.
+- **"email is not configured"** - the `.env` is missing `SMTP_HOST` or
+  `MAIL_FROM`. `npm run mail:check` in the checkout diagnoses it, and
+  `docs/EMAIL-SETUP.md` is the full guide.
 - **Sends fine, never arrives** - the `MAIL_FROM` address must be on Amazon's
   Approved Personal Document E-mail List. Nothing bounces; it is dropped.
 - **`--diagrams` errors** - the mermaid toolchain is not installed on this
-  machine: `cd ~/w/md2epub && npm run diagrams:install`.
+  machine: `npm run diagrams:install` in the checkout.
 - **Nothing renders as a diagram** - only ` ```mermaid ` fences and raw
   `<pre class="mermaid">` blocks are rendered, and only with `--diagrams`.
 - **`--karakeep` says nothing had a crawled article** - plenty of saved links
@@ -80,11 +82,12 @@ still valid and was still sent.
   more likely the queue really is empty of readable items.
 
 To try the whole path without sending anything, put `MAIL_TRANSPORT=log` in the
-environment: the message and the attachment are written to
-`~/w/md2epub/.mail-outbox/` instead.
+environment: the message and the attachment are written to `.mail-outbox/` in
+the checkout instead.
 
 ## The human path
 
-Matt can also do this himself at **https://md2epub.lab.immatt.com** (tailnet
-only), which is the same converter with a paste box, a file drop and a URL tab.
-Mention it when he is on his phone and the document is not on this machine.
+The same converter has a web portal, with a paste box, a file drop and a URL
+tab. If one is running on this machine, `curl -s localhost:8787/api/health` will
+answer; mention it when the user is on a phone, or the document is not on this
+machine.

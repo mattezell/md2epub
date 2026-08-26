@@ -1,24 +1,56 @@
 # md2epub
 
-Paste Markdown into a web portal or upload a `.md` file, get back a valid EPUB 3.
-Download it, or have it emailed to an address you type in.
+Turn Markdown into a valid EPUB 3, in the browser or from the command line, and
+optionally email it straight to a Kindle.
 
-Every fixture in `test/fixtures/` is checked against the real
-[EPUBCheck](https://github.com/w3c/epubcheck) 5.3.0 on every `npm run validate`,
-including a hostile input fixture full of scripts, malformed HTML and broken
-links. Output currently passes with zero errors and zero warnings.
+No pandoc, no Calibre, no system dependencies: the converter is plain JavaScript
+and its production dependencies come to 43 MB. Output is checked against the
+real [EPUBCheck](https://github.com/w3c/epubcheck) on every run of the test
+suite, including a fixture full of deliberately hostile HTML.
+
+```bash
+docker run -p 8787:8787 ghcr.io/mattezell/md2epub
+```
+
+Open http://localhost:8787 and paste something in. That works with no
+configuration at all; email needs a few lines in a `.env`, covered below.
+
+**What it does**
+
+- Markdown in, EPUB 3 out. A folder of documents becomes one book, one chapter
+  per file, with links between them rewritten to chapter links.
+- Mermaid diagrams rendered to images, so they arrive as pictures rather than
+  as diagram source.
+- Web pages by URL: the article is extracted from the page and its images come
+  with it. A read-later queue (Karakeep) can be turned into a book.
+- A cover drawn from the title and author, rasterised so e-readers actually
+  display it.
+- Email delivery over SMTP, including the Send to Kindle path.
+
+**What it is not**: there is no authentication. See [Running it
+safely](#running-it-safely) before putting it anywhere other people can reach.
 
 ## Quick start
+
+Container, nothing to install:
+
+```bash
+docker compose up                          # http://localhost:8787
+docker compose --build-arg TARGET=slim up  # smaller, no browser (see Images)
+```
+
+Or from a checkout:
 
 ```bash
 npm install
 npm start                      # http://127.0.0.1:8787
 ```
 
-That is the whole download path. Email needs a few more lines of config, below.
+Either way the download path works immediately. Email needs a few lines of
+config, below.
 
 ```bash
-npm test                       # 144 tests: converter, API, guards, web input and the portal
+npm test                       # 151 tests: converter, API, guards, web input and the portal
 npm run epubcheck:install      # fetches EPUBCheck into tools/ (needs java + unzip)
 npm run diagrams:install       # optional: mermaid rendering (see Diagrams below)
 npm run skill:install          # optional: the agent skill, for Claude Code sessions
@@ -275,6 +307,50 @@ loopback, link local, multicast and CGNAT (100.64/10, which includes tailnet)
 addresses, re-checking on every redirect hop rather than trusting the first.
 It is off by default.
 
+## Running it safely
+
+md2epub has **no authentication**. Anything that can reach it can convert, and
+if email is configured, send. That is fine on a laptop or behind a tailnet; it
+is not fine on a public address. Before exposing it:
+
+- **Bind loopback** (`HOST=127.0.0.1`) and put a reverse proxy with
+  authentication in front. The proxy is where auth belongs, not here.
+- **Set `MAIL_ALLOWED_RECIPIENTS`.** Without it the email endpoint refuses to
+  send at all, deliberately: an instance that mails anywhere is a relay for
+  whoever finds it. `MAIL_ALLOW_ANY_RECIPIENT=true` overrides that, and should
+  be a decision rather than an accident.
+- **Know what the rate limits are.** Conversions are capped per client address
+  per hour (`CONVERT_RATE_PER_HOUR`, default 120) and emails separately
+  (`MAIL_RATE_PER_HOUR`, default 20). Conversion parses untrusted input, can
+  fetch remote pages and images, and with diagrams enabled starts a browser per
+  request, so the cap matters.
+- **Remote fetching is guarded, not absent.** Fetching pages and images refuses
+  private, loopback, link local and CGNAT addresses, and re-checks on every
+  redirect. It is still outbound traffic on behalf of whoever asked.
+
+## Container images
+
+Three tiers, because the browser and the mermaid toolchain are most of the
+weight and not everyone needs them.
+
+| Target | Size | What works |
+|---|---|---|
+| `slim` | 286 MB | Conversion, email. **Covers stay SVG**, which Kindle does not display |
+| `default` | 1.7 GB | + Chromium and fonts: PNG covers |
+| `full` | larger again | + mermaid diagrams |
+
+```bash
+docker build -t md2epub .                     # default
+docker build --target slim -t md2epub:slim .
+docker build --target full -t md2epub:full .
+```
+
+Chromium is what makes the cover a PNG, which is why it is in the default image
+rather than an extra: a Kindle shows its generic placeholder for an SVG cover.
+The fonts are not optional either. Without `font-noto-cjk` and friends, a title
+in Japanese or Arabic renders as empty boxes, so CI asserts the image can
+actually find a Japanese-capable font.
+
 ## Deploying to Cloudflare Workers
 
 The core and the API are runtime agnostic, so the same code runs on Workers.
@@ -293,6 +369,17 @@ nodemailer. Without those two secrets the deployed portal is download only.
 Note: the Resend request shape is unit tested against a stub, but it has not
 been exercised against the live Resend API from here, and Resend only delivers
 to arbitrary recipients once you have verified a sending domain.
+
+## Running as a service
+
+```bash
+npm run service:print | sudo tee /etc/systemd/system/md2epub.service
+sudo systemctl daemon-reload && sudo systemctl enable --now md2epub
+```
+
+`service:print` fills the template in `deploy/` with this checkout's path, this
+user and this Node binary, and writes it to stdout so it can be read before it
+is installed.
 
 ## Layout
 
@@ -318,6 +405,10 @@ docs/         email setup guide
 test/         node:test suites, including the portal driven under jsdom
 scripts/      EPUBCheck install and the fixture validation run
 ```
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
 
 ## Limits and known gaps
 

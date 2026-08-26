@@ -1,6 +1,6 @@
 ---
 title: "Zen and the Art of Unicode — 日本語"
-author: Matt Ezell
+author: A. Writer
 language: en
 ---
 

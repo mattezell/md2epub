@@ -1,27 +1,27 @@
-# md2epub portal, fronted by Caddy at https://md2epub.lab.immatt.com
-# (design of record: projects wiki, tailnet-https-caddy-cloudflare).
+# md2epub as a systemd service.
 #
-# Install:
-#   sudo install -m 644 /home/matt/w/md2epub/md2epub.service /etc/systemd/system/
+# This is a template. Fill it in and install it with:
+#   npm run service:print | sudo tee /etc/systemd/system/md2epub.service
 #   sudo systemctl daemon-reload && sudo systemctl enable --now md2epub
 #
-# Binds loopback only: the tailnet front door is Caddy, and the app has no
-# authentication of its own, so nothing should reach it another way.
+# Bind loopback (HOST=127.0.0.1 in .env) and put a reverse proxy in front:
+# md2epub has no authentication of its own, so anything that can reach it can
+# convert and, if email is configured, send.
 
 [Unit]
 Description=md2epub - Markdown to EPUB portal
-Documentation=https://github.com/mattezell/md2epub
+Documentation=__REPO__
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=matt
-Group=matt
-WorkingDirectory=/home/matt/w/md2epub
+User=__USER__
+Group=__GROUP__
+WorkingDirectory=__DIR__
 # PORT, HOST and the mail settings come from the gitignored .env, which the
 # server reads itself at startup.
-ExecStart=/usr/bin/node /home/matt/w/md2epub/src/server.js
+ExecStart=__NODE__ __DIR__/src/server.js
 Restart=on-failure
 RestartSec=5
 

@@ -86,7 +86,7 @@ test('no rasteriser is built when there is no browser', () => {
 
 test('rasterises a real cover with the local browser', { skip }, async () => {
   const rasterize = createSvgRasterizer({ cacheDir: '' });
-  const drawn = generateCover({ title: 'Real Cover', authors: ['Matt Ezell'], date: '2026-08-24' });
+  const drawn = generateCover({ title: 'Real Cover', authors: ['A. Writer'], date: '2026-08-24' });
   const png = await rasterize(drawn.bytes, { width: drawn.width, height: drawn.height });
   assert.equal(png.mediaType, 'image/png');
   assert.deepEqual([...png.bytes.slice(0, 8)], PNG_HEADER);
@@ -98,7 +98,7 @@ test('rasterises a real cover with the local browser', { skip }, async () => {
 
 test('a real book gets a real PNG cover', { skip }, async () => {
   const result = await markdownToEpub('# Poolside Reading\n\nx', {
-    author: 'Matt Ezell',
+    author: 'A. Writer',
     rasterizeSvg: createSvgRasterizer({ cacheDir: '' }),
   });
   const cover = entries(result.bytes)['EPUB/images/cover.png'];

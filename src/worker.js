@@ -20,7 +20,9 @@ function build(env) {
     mailer: createResendMailer(env),
     config: {
       allowedRecipients,
+      allowAnyRecipient: /^(1|true|yes|on)$/i.test(env.MAIL_ALLOW_ANY_RECIPIENT || ''),
       emailsPerHour: Number(env.MAIL_RATE_PER_HOUR || 20),
+      conversionsPerHour: Number(env.CONVERT_RATE_PER_HOUR || 120),
       maxMarkdownBytes: Number(env.MAX_MARKDOWN_BYTES || 4 * 1024 * 1024),
       maxCoverBytes: Number(env.MAX_COVER_BYTES || 8 * 1024 * 1024),
       embedRemoteImages: /^(1|true|yes|on)$/i.test(env.EMBED_REMOTE_IMAGES || ''),

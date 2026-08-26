@@ -12,8 +12,12 @@ const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/;
 const DEFAULTS = {
   maxMarkdownBytes: MAX_MARKDOWN_BYTES,
   maxCoverBytes: 12 * 1024 * 1024,
-  allowedRecipients: [],   // empty means any address
+  // Deny by default. An unconfigured instance that mails anywhere is a relay,
+  // and this one has no authentication of its own.
+  allowedRecipients: [],
+  allowAnyRecipient: false,
   emailsPerHour: 20,
+  conversionsPerHour: 120,
   embedRemoteImages: false,
   renderDiagrams: false,
   diagramsUnavailable: 'this server has no diagram renderer',
@@ -197,6 +201,10 @@ const asciiFallback = (name) => name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\
 export function createApp({ mailer = null, config: overrides = {} } = {}) {
   const config = { ...DEFAULTS, ...overrides };
   const limitEmail = createRateLimiter(config.emailsPerHour);
+  // Converting is the expensive path: it parses untrusted input, may fetch
+  // remote pages and images, and with diagrams enabled starts a browser per
+  // request. Without a cap that is a denial of service with one curl loop.
+  const limitConvert = createRateLimiter(config.conversionsPerHour);
   const app = new Hono();
 
   app.get('/api/health', (c) =>
@@ -207,6 +215,7 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
         maxMarkdownBytes: config.maxMarkdownBytes,
         maxCoverBytes: config.maxCoverBytes,
         emailsPerHour: config.emailsPerHour,
+        conversionsPerHour: config.conversionsPerHour,
       },
       remoteImages: Boolean(config.fetchImage),
       urls: Boolean(config.fetchArticle),
@@ -216,6 +225,10 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
     }));
 
   app.post('/api/convert', async (c) => {
+    const gate = limitConvert(clientKey(c));
+    if (!gate.allowed) {
+      throw new RequestError(`Too many conversions from here. Try again in ${Math.ceil((gate.retryAfter || 3600) / 60)} minutes.`, 429);
+    }
     const { fields, markdown, cover } = await readForm(c, config);
     const result = await convert(markdown, fields, cover, config);
     const headers = {
@@ -245,8 +258,17 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
       const allowed = config.allowedRecipients.some((rule) =>
         rule.startsWith('@') ? to.toLowerCase().endsWith(rule.toLowerCase()) : to.toLowerCase() === rule.toLowerCase());
       if (!allowed) throw new RequestError('This server only sends to approved addresses.', 403);
+    } else if (!config.allowAnyRecipient) {
+      throw new RequestError(
+        'This server has not been told who it may send to. Set MAIL_ALLOWED_RECIPIENTS (a comma separated list of addresses or @domains), or MAIL_ALLOW_ANY_RECIPIENT=true to allow anyone. Leaving it open lets whoever can reach this server send mail as you.',
+        403,
+      );
     }
 
+    const convertGate = limitConvert(clientKey(c));
+    if (!convertGate.allowed) {
+      throw new RequestError(`Too many conversions from here. Try again in ${Math.ceil((convertGate.retryAfter || 3600) / 60)} minutes.`, 429);
+    }
     const gate = limitEmail(clientKey(c));
     if (!gate.allowed) {
       throw new RequestError(`Too many emails from here. Try again in ${Math.ceil((gate.retryAfter || 3600) / 60)} minutes.`, 429);

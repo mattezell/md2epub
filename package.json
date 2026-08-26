@@ -18,7 +18,9 @@
     "epubcheck:install": "node scripts/install-epubcheck.mjs",
     "kindle": "node src/cli.js --kindle",
     "diagrams:install": "node scripts/install-mermaid.mjs",
-    "skill:install": "node scripts/install-skill.mjs"
+    "skill:install": "node scripts/install-skill.mjs",
+    "service:print": "node scripts/print-service.mjs",
+    "mail:check": "node scripts/mail-check.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -40,5 +42,20 @@
   },
   "bin": {
     "md2epub": "src/cli.js"
-  }
+  },
+  "license": "MIT",
+  "author": "Matt Ezell",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mattezell/md2epub.git"
+  },
+  "keywords": [
+    "epub",
+    "markdown",
+    "kindle",
+    "ebook",
+    "epub3",
+    "mermaid",
+    "readability"
+  ]
 }

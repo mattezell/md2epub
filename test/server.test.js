@@ -119,7 +119,7 @@ test('email: the 503 explains how this particular runtime turns email on', async
 
 test('email: sends the epub as an attachment', async () => {
   const mailer = fakeMailer();
-  const app = createApp({ mailer });
+  const app = createApp({ mailer, config: { allowAnyRecipient: true } });
   const response = await post(app, '/api/email', form({ markdown: '# Mailed Book\n\nx', email: 'reader@example.com', note: 'enjoy' }));
   assert.equal(response.status, 200);
   const body = await response.json();
@@ -161,7 +161,7 @@ test('email: the recipient allowlist is enforced', async () => {
 
 test('email: the hourly rate limit returns 429 rather than sending', async () => {
   const mailer = fakeMailer();
-  const app = createApp({ mailer, config: { emailsPerHour: 2 } });
+  const app = createApp({ mailer, config: { emailsPerHour: 2, allowAnyRecipient: true } });
   const send = () => post(app, '/api/email', form({ markdown: '# T\n\nx', email: 'a@example.com' }));
   assert.equal((await send()).status, 200);
   assert.equal((await send()).status, 200);
@@ -174,6 +174,7 @@ test('email: the hourly rate limit returns 429 rather than sending', async () =>
 test('email: a transport failure is reported as 502, not swallowed', async () => {
   const app = createApp({
     mailer: { kind: 'broken', describe: () => 'broken', send: async () => { throw new Error('connection refused'); } },
+    config: { allowAnyRecipient: true },
   });
   const response = await post(app, '/api/email', form({ markdown: '# T\n\nx', email: 'a@example.com' }));
   assert.equal(response.status, 502);
@@ -250,4 +251,40 @@ test('health says why diagrams are unavailable, so the portal can explain', asyn
   const ready = await (await on.fetch(new Request('http://localhost/api/health'))).json();
   assert.equal(ready.diagrams, true);
   assert.equal(ready.diagramsUnavailable, null);
+});
+
+test('email: an instance that has not been told who it may send to refuses', async () => {
+  // The default. An open instance with no auth is a mail relay, so it has to
+  // be configured on purpose rather than by omission.
+  const mailer = fakeMailer();
+  const app = createApp({ mailer });
+  const response = await post(app, '/api/email', form({ markdown: '# T\n\nx', email: 'anyone@example.com' }));
+  assert.equal(response.status, 403);
+  assert.match((await response.json()).error, /MAIL_ALLOWED_RECIPIENTS/);
+  assert.equal(mailer.sent.length, 0);
+});
+
+test('email: opening it up is possible, but has to be explicit', async () => {
+  const mailer = fakeMailer();
+  const app = createApp({ mailer, config: { allowAnyRecipient: true } });
+  assert.equal((await post(app, '/api/email', form({ markdown: '# T\n\nx', email: 'anyone@example.com' }))).status, 200);
+  assert.equal(mailer.sent.length, 1);
+});
+
+test('convert: conversion is rate limited, not only email', async () => {
+  const app = createApp({ config: { conversionsPerHour: 2 } });
+  const convert = () => post(app, '/api/convert', form({ markdown: '# T\n\nx' }));
+  assert.equal((await convert()).status, 200);
+  assert.equal((await convert()).status, 200);
+  const third = await convert();
+  assert.equal(third.status, 429);
+  assert.match((await third.json()).error, /Too many conversions/);
+});
+
+test('convert: the email endpoint spends the conversion budget too', async () => {
+  const mailer = fakeMailer();
+  const app = createApp({ mailer, config: { conversionsPerHour: 1, allowAnyRecipient: true } });
+  assert.equal((await post(app, '/api/email', form({ markdown: '# T\n\nx', email: 'a@example.com' }))).status, 200);
+  const second = await post(app, '/api/convert', form({ markdown: '# T\n\nx' }));
+  assert.equal(second.status, 429, 'converting by email counts against converting');
 });

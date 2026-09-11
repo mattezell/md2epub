@@ -271,3 +271,25 @@ test('page: a stale cached page does not break the capability wiring', async () 
   // The handler survived: the email status was still filled in.
   assert.match(win.document.getElementById('email-status').textContent, /Email is configured/);
 });
+
+test('page: with a Kindle default on the server, a blank address sends there', async () => {
+  let sent = null;
+  const { doc, win, calls } = await boot({
+    health: { ok: true, email: { configured: true, transport: 'smtp', describe: 'mail.example.com', kindleDefault: true }, remoteImages: true },
+    routes: {
+      '/api/email': (w, init) => {
+        sent = init.body;
+        return new Response(JSON.stringify({ ok: true, to: 'me@kindle.com', filename: 'book.epub', size: 4096, warnings: [] }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      },
+    },
+  });
+  assert.match($(doc, 'email-status').textContent, /blank/i);
+  $(doc, 'markdown').value = '# Book\n\ntext';
+  $(doc, 'email-btn').dispatchEvent(new win.Event('click'));
+  await settle();
+  assert.equal(calls.filter((c) => c.url === '/api/email').length, 1);
+  assert.equal(sent.has('email'), false, 'no address field is sent; the server chooses');
+  assert.match($(doc, 'result-body').textContent, /me@kindle\.com/);
+});

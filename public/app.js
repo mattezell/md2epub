@@ -9,6 +9,9 @@ const downloadBtn = document.getElementById('download-btn');
 const emailBtn = document.getElementById('email-btn');
 const emailInput = document.getElementById('email');
 const emailStatus = document.getElementById('email-status');
+// Set from /api/health: the server fills in the configured Kindle when the
+// address is left blank.
+let kindleDefault = false;
 const remoteImagesRow = document.getElementById('remote-images-row');
 const diagramsRow = document.getElementById('diagrams-row');
 const diagramsNote = document.getElementById('diagrams-note');
@@ -245,12 +248,15 @@ emailBtn.addEventListener('click', () => {
     report({ ok: false, title: 'Nothing to convert', message: 'Paste some Markdown, choose a file, or give a URL first.' });
     return;
   }
-  if (!emailInput.value.trim()) {
+  const address = emailInput.value.trim();
+  if (!address && !kindleDefault) {
     report({ ok: false, title: 'No address', message: 'Enter the email address to send the EPUB to.' });
     emailInput.focus();
     return;
   }
-  data.set('email', emailInput.value.trim());
+  // A blank address is sent as no field at all; the server chooses.
+  if (address) data.set('email', address);
+  else data.delete('email');
   withBusy(emailBtn, 'Sending...', async () => {
     const response = await fetch('/api/email', { method: 'POST', body: data });
     const body = await response.json().catch(() => ({}));
@@ -281,6 +287,11 @@ fetch('/api/health')
         ? `Email is in dry run mode: ${health.email.describe}.`
         : `Email is configured: ${health.email.describe}.`;
       emailBtn.disabled = false;
+      if (health.email.kindleDefault) {
+        kindleDefault = true;
+        emailInput.placeholder = 'blank sends to the configured Kindle';
+        emailStatus.textContent += ' Leave the address blank to send to the configured Kindle.';
+      }
     } else {
       emailStatus.textContent = 'This server has no SMTP configured, so email delivery is off. Downloads still work.';
       emailBtn.disabled = true;

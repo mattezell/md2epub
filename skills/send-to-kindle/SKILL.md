@@ -11,7 +11,9 @@ into a book and mails it to the device.
 The tool is `md2epub`. If it is not on PATH, run it as
 `node <checkout>/src/cli.js` instead. Its configuration (SMTP, the `@kindle.com`
 address as `KINDLE_ADDRESS`, diagram rendering) lives in a `.env` beside the
-checkout, and is read no matter which directory you run from.
+checkout, and is read no matter which directory you run from. On a machine
+with no checkout at all, the same converter is reachable as a portal over HTTP;
+see "No md2epub here? Use the portal" at the end.
 
 ## The command
 
@@ -85,9 +87,55 @@ To try the whole path without sending anything, put `MAIL_TRANSPORT=log` in the
 environment: the message and the attachment are written to `.mail-outbox/` in
 the checkout instead.
 
-## The human path
+## No md2epub here? Use the portal
 
-The same converter has a web portal, with a paste box, a file drop and a URL
-tab. If one is running on this machine, `curl -s localhost:8787/api/health` will
-answer; mention it when the user is on a phone, or the document is not on this
-machine.
+The same converter runs as a web portal, and any machine that can reach it can
+send a book without a checkout, a `.env`, or any mail credentials. The address is
+in `MD2EPUB_URL` (set per machine in the Claude Code settings); where the server
+runs locally it answers on `http://127.0.0.1:8787`.
+
+```bash
+PORTAL="${MD2EPUB_URL:-http://127.0.0.1:8787}"
+curl -sS "$PORTAL/api/health"
+```
+
+`email.configured` must be `true`. `email.kindleDefault: true` means a request
+that names no recipient goes to the configured Kindle, which is the normal case:
+
+```bash
+curl -sS -F "file=@HANDOFF.md;type=text/markdown" "$PORTAL/api/email"
+```
+
+Several files become one book, a chapter each, in the order given:
+
+```bash
+curl -sS -F "file=@00-preface.md" -F "file=@01-body.md" -F "title=Project Docs" \
+  -F "renderDiagrams=false" "$PORTAL/api/email"
+```
+
+Fields, all optional: `title`, `author`, `splitLevel` (`1` starts a chapter at
+every `#`, `2` at every `##`, `0` keeps one chapter), `tocDepth`, `typographer`,
+`generateCover`, `renderDiagrams` (send `false` unless the book has mermaid
+fences; rendering spawns a browser per conversion), `note` and `subject` for the
+mail. YAML frontmatter is picked up. To get the file back instead of mailing it,
+POST the same form to `/api/convert -o book.epub`.
+
+Success is JSON:
+
+```
+{"ok":true,"to":"<address>","filename":"...epub","size":246627,"chapters":11,"warnings":[],"messageId":"<...>"}
+```
+
+The confirm-before-sending rule above applies exactly as it does to `--kindle`.
+
+What the refusals mean:
+
+- 403 "only sends to approved addresses": the portal is locked to Matt's Kindle
+  by `MAIL_ALLOWED_RECIPIENTS`. Do not pass a different address; leave the field out.
+- 400 "No recipient": this server has no `KINDLE_ADDRESS`, so pass `-F email=...`.
+- 413: the source is over the server's limit (8 MB of Markdown); drop images or
+  split the book.
+- 429: the hourly send limit (20 by default) is spent; wait, do not retry in a loop.
+
+The portal is also the path for a human on a phone: it has a paste box, a file
+drop and a URL tab.

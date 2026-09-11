@@ -288,3 +288,45 @@ test('convert: the email endpoint spends the conversion budget too', async () =>
   const second = await post(app, '/api/convert', form({ markdown: '# T\n\nx' }));
   assert.equal(second.status, 429, 'converting by email counts against converting');
 });
+
+test('health: says whether a request with no address has somewhere to go', async () => {
+  const bare = await createApp({ mailer: fakeMailer() }).fetch(new Request('http://localhost/api/health'));
+  assert.equal((await bare.json()).email.kindleDefault, false);
+  const configured = await createApp({ mailer: fakeMailer(), config: { kindleAddress: 'me@kindle.com' } })
+    .fetch(new Request('http://localhost/api/health'));
+  assert.equal((await configured.json()).email.kindleDefault, true);
+});
+
+test('email: with no address, the configured Kindle is the recipient', async () => {
+  const mailer = fakeMailer();
+  const app = createApp({ mailer, config: { kindleAddress: 'me@kindle.com', allowedRecipients: ['me@kindle.com'] } });
+  const response = await post(app, '/api/email', form({ markdown: '# Kindle Book\n\nx' }));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).to, 'me@kindle.com');
+  assert.equal(mailer.sent[0].to, 'me@kindle.com');
+});
+
+test('email: an explicit address still wins over the Kindle default', async () => {
+  const mailer = fakeMailer();
+  const app = createApp({ mailer, config: { kindleAddress: 'me@kindle.com', allowedRecipients: ['@kindle.com'] } });
+  const response = await post(app, '/api/email', form({ markdown: '# T\n\nx', email: 'other@kindle.com' }));
+  assert.equal(response.status, 200);
+  assert.equal(mailer.sent[0].to, 'other@kindle.com');
+});
+
+test('email: the Kindle default is still subject to the allowlist', async () => {
+  const mailer = fakeMailer();
+  const app = createApp({ mailer, config: { kindleAddress: 'me@kindle.com', allowedRecipients: ['someone@example.com'] } });
+  const response = await post(app, '/api/email', form({ markdown: '# T\n\nx' }));
+  assert.equal(response.status, 403);
+  assert.equal(mailer.sent.length, 0);
+});
+
+test('email: with no address and no default, the refusal says how to fix it', async () => {
+  const mailer = fakeMailer();
+  const app = createApp({ mailer, config: { allowAnyRecipient: true } });
+  const response = await post(app, '/api/email', form({ markdown: '# T\n\nx' }));
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /KINDLE_ADDRESS/);
+  assert.equal(mailer.sent.length, 0);
+});

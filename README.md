@@ -112,6 +112,10 @@ md2epub HANDOFF.md --kindle          # one document
 md2epub ./docs --kindle              # a whole folder as one book
 ```
 
+From a machine with no checkout, the portal does the same over HTTP: a
+`POST /api/email` that names no recipient goes to the server's `KINDLE_ADDRESS`
+(see the HTTP API below). The `send-to-kindle` skill covers both paths.
+
 The address in `MAIL_FROM` must be on your Amazon Approved Personal Document
 E-mail List or the message is dropped, usually without a bounce. Amazon's limit
 is 50 MB per email; converted Markdown lands between 3 KB and 100 KB.
@@ -161,11 +165,16 @@ Fields, all optional except the source: `title`, `author`, `language`,
 that starts a new chapter, 0 for one file), `tocDepth`, `typographer`,
 `embedRemoteImages`, and for `/api/email`, `email`, `subject` and `note`.
 
+`email` may be left out when the server has `KINDLE_ADDRESS`: the book then goes
+to that Kindle, still subject to `MAIL_ALLOWED_RECIPIENTS`. `GET /api/health`
+reports this as `email.kindleDefault`, and the portal's address box says so.
+
 ```bash
 curl -F "markdown=# Hello
 
 World." http://127.0.0.1:8787/api/convert -o hello.epub
 curl -F "file=@book.md" -F "email=me@example.com" http://127.0.0.1:8787/api/email
+curl -F "file=@book.md" http://127.0.0.1:8787/api/email   # no address: the configured Kindle
 ```
 
 ## Web pages and the read-later queue

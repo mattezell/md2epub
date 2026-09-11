@@ -21,6 +21,7 @@ function build(env) {
     config: {
       allowedRecipients,
       allowAnyRecipient: /^(1|true|yes|on)$/i.test(env.MAIL_ALLOW_ANY_RECIPIENT || ''),
+      kindleAddress: (env.KINDLE_ADDRESS || '').trim(),
       emailsPerHour: Number(env.MAIL_RATE_PER_HOUR || 20),
       conversionsPerHour: Number(env.CONVERT_RATE_PER_HOUR || 120),
       maxMarkdownBytes: Number(env.MAX_MARKDOWN_BYTES || 4 * 1024 * 1024),

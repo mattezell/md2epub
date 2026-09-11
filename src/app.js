@@ -16,6 +16,10 @@ const DEFAULTS = {
   // and this one has no authentication of its own.
   allowedRecipients: [],
   allowAnyRecipient: false,
+  // Where a request that names no recipient goes. Empty means such a request
+  // is refused; set it (KINDLE_ADDRESS) so "send this to my Kindle" needs no
+  // address on the calling side.
+  kindleAddress: '',
   emailsPerHour: 20,
   conversionsPerHour: 120,
   embedRemoteImages: false,
@@ -210,7 +214,9 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
   app.get('/api/health', (c) =>
     c.json({
       ok: true,
-      email: mailer ? { configured: true, transport: mailer.kind, describe: mailer.describe() } : { configured: false },
+      email: mailer
+        ? { configured: true, transport: mailer.kind, describe: mailer.describe(), kindleDefault: Boolean(config.kindleAddress) }
+        : { configured: false },
       limits: {
         maxMarkdownBytes: config.maxMarkdownBytes,
         maxCoverBytes: config.maxCoverBytes,
@@ -252,7 +258,13 @@ export function createApp({ mailer = null, config: overrides = {} } = {}) {
       throw new RequestError(`Email delivery is not configured on this server.${help}`, 503);
     }
     const { fields, markdown, cover } = await readForm(c, config);
-    const to = String(fields.email || fields.to || '').trim();
+    // No address means the configured Kindle, so a caller never has to carry
+    // the address itself. The allowlist below still applies to the default.
+    const requested = String(fields.email || fields.to || '').trim();
+    const to = requested || config.kindleAddress;
+    if (!to) {
+      throw new RequestError('No recipient. Pass an email address, or set KINDLE_ADDRESS on the server so a request without one goes to that Kindle.');
+    }
     if (!EMAIL_RE.test(to)) throw new RequestError('That does not look like an email address.');
     if (config.allowedRecipients.length) {
       const allowed = config.allowedRecipients.some((rule) =>

@@ -415,6 +415,12 @@ test/         node:test suites, including the portal driven under jsdom
 scripts/      EPUBCheck install and the fixture validation run
 ```
 
+## Maintaining it
+
+[HANDOFF.md](HANDOFF.md) covers what is running where, the checks that matter,
+the traps this project has already paid for, and the known gaps in the order
+they are worth taking.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

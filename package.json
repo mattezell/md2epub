@@ -43,7 +43,7 @@
   "bin": {
     "md2epub": "src/cli.js"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "Matt Ezell",
   "repository": {
     "type": "git",
@@ -57,5 +57,9 @@
     "epub3",
     "mermaid",
     "readability"
-  ]
+  ],
+  "homepage": "https://github.com/mattezell/md2epub#readme",
+  "bugs": {
+    "url": "https://github.com/mattezell/md2epub/issues"
+  }
 }

@@ -7,6 +7,9 @@
 #   docker build -t md2epub .                      # default
 #   docker build --target slim -t md2epub:slim .
 #   docker build --target full -t md2epub:full .
+#
+# CI publishes all three from main as ghcr.io/mattezell/md2epub with
+# the tags latest (default), slim and full.
 
 # ---------------------------------------------------------------- dependencies
 FROM node:22-alpine AS deps
@@ -16,6 +19,11 @@ RUN npm ci --omit=dev --no-audit --no-fund
 
 # ------------------------------------------------------------------------ slim
 FROM node:22-alpine AS slim
+# GHCR links the package to the repository through this label, so the images
+# inherit the repository description and visibility.
+LABEL org.opencontainers.image.source="https://github.com/mattezell/md2epub" \
+      org.opencontainers.image.description="Markdown to EPUB 3, with Send to Kindle delivery" \
+      org.opencontainers.image.licenses="Apache-2.0"
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8787

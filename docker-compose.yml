@@ -10,7 +10,7 @@ services:
   md2epub:
     # Swap for md2epub:slim (no browser, SVG covers Kindle will not show) or
     # build the full tier for mermaid diagrams:
-    #   docker compose build --build-arg TARGET=full
+    #   MD2EPUB_TARGET=full docker compose up --build
     build:
       context: .
       target: ${MD2EPUB_TARGET:-default}

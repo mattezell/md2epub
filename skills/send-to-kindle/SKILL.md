@@ -24,7 +24,7 @@ md2epub <path> --kindle
 That converts and sends. Everything else is a variation:
 
 ```bash
-md2epub HANDOFF.md --kindle                        # one document
+md2epub MAINTAINING.md --kindle                    # one document
 md2epub ./docs --kindle                            # a folder, one chapter per file
 md2epub ./docs -r --title "Neon Exile Docs" --kindle   # include subdirectories
 md2epub notes.md --diagrams --kindle               # render mermaid to images
@@ -103,7 +103,7 @@ curl -sS "$PORTAL/api/health"
 that names no recipient goes to the configured Kindle, which is the normal case:
 
 ```bash
-curl -sS -F "file=@HANDOFF.md;type=text/markdown" "$PORTAL/api/email"
+curl -sS -F "file=@MAINTAINING.md;type=text/markdown" "$PORTAL/api/email"
 ```
 
 Several files become one book, a chapter each, in the order given:

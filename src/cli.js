@@ -66,7 +66,7 @@ Conversion:
   -h, --help
 
 Examples:
-  md2epub HANDOFF.md --kindle
+  md2epub MAINTAINING.md --kindle
   md2epub ./docs --title "Project Docs" --kindle
   md2epub notes.md -o notes.epub
 `;

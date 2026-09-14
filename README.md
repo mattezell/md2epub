@@ -36,7 +36,7 @@ Container, nothing to install:
 
 ```bash
 docker compose up                          # http://localhost:8787
-docker compose --build-arg TARGET=slim up  # smaller, no browser (see Images)
+MD2EPUB_TARGET=slim docker compose up      # smaller, no browser (see Container images)
 ```
 
 Or from a checkout:
@@ -50,7 +50,7 @@ Either way the download path works immediately. Email needs a few lines of
 config, below.
 
 ```bash
-npm test                       # 151 tests: converter, API, guards, web input and the portal
+npm test                       # 157 tests: converter, API, guards, web input and the portal
 npm run epubcheck:install      # fetches EPUBCheck into tools/ (needs java + unzip)
 npm run diagrams:install       # optional: mermaid rendering (see Diagrams below)
 npm run skill:install          # optional: the agent skill, for Claude Code sessions
@@ -108,7 +108,7 @@ MAIL_ALLOWED_RECIPIENTS=@kindle.com
 ```
 
 ```bash
-md2epub HANDOFF.md --kindle          # one document
+md2epub MAINTAINING.md --kindle      # one document
 md2epub ./docs --kindle              # a whole folder as one book
 ```
 
@@ -348,6 +348,16 @@ weight and not everyone needs them.
 | `default` | 1.7 GB | + Chromium and fonts: PNG covers |
 | `full` | 2.3 GB | + mermaid diagrams |
 
+All three are published from `main` on every push:
+
+```bash
+docker pull ghcr.io/mattezell/md2epub          # default
+docker pull ghcr.io/mattezell/md2epub:slim
+docker pull ghcr.io/mattezell/md2epub:full
+```
+
+Or build them from a checkout:
+
 ```bash
 docker build -t md2epub .                     # default
 docker build --target slim -t md2epub:slim .
@@ -417,13 +427,10 @@ scripts/      EPUBCheck install and the fixture validation run
 
 ## Maintaining it
 
-[HANDOFF.md](HANDOFF.md) covers what is running where, the checks that matter,
-the traps this project has already paid for, and the known gaps in the order
-they are worth taking.
-
-## Licence
-
-MIT. See [LICENSE](LICENSE).
+[MAINTAINING.md](MAINTAINING.md) covers the checks that matter, the traps this
+project has already paid for, and routine upkeep. [ROADMAP.md](ROADMAP.md) has
+the decisions behind the design and what is worth doing next;
+[CHANGELOG.md](CHANGELOG.md) is the user-facing history.
 
 ## Limits and known gaps
 
@@ -436,3 +443,17 @@ MIT. See [LICENSE](LICENSE).
   display.
 - The rate limiter is in process memory, so it resets on restart and is per
   Worker isolate rather than global.
+
+## Licence
+
+Apache 2.0. See [LICENSE](LICENSE).
+
+## Credits
+
+It stands on:
+
+- [markdown-it](https://github.com/markdown-it/markdown-it) for parsing, [fflate](https://github.com/101arrowz/fflate) for the OCF zip, [entities](https://github.com/fb55/entities) for the XHTML
+- [Hono](https://hono.dev) for the API on Node and on Workers, [nodemailer](https://nodemailer.com) for SMTP
+- [Readability](https://github.com/mozilla/readability), [jsdom](https://github.com/jsdom/jsdom) and [Turndown](https://github.com/mixmark-io/turndown) for turning web pages into Markdown
+- [EPUBCheck](https://github.com/w3c/epubcheck) from the W3C, which is what makes "valid EPUB 3" a tested claim rather than a hope
+- [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) and Chromium for diagrams and PNG covers

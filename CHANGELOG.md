@@ -52,6 +52,11 @@ All notable changes to md2epub. The format follows
   nodemailer 10.2.1; hono 4.13.14; `source-map-js` (transitive). The mermaid
   toolchain still carries a low-severity KaTeX advisory that only Mermaid 12
   fixes.
+- Frontmatter could exhaust CPU and memory: YAML aliases are references, so
+  about 400 bytes of nested ones became a 200 MB title once stringified (5.6
+  seconds; one more level runs out of memory). Present since 0.1.0. Aliases
+  are now capped at 16 per document, and only scalars or flat lists of scalars
+  become metadata.
 
 ## [0.1.0] - 2026-08-25
 

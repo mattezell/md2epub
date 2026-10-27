@@ -50,7 +50,7 @@ Either way the download path works immediately. Email needs a few lines of
 config, below.
 
 ```bash
-npm test                       # 159 tests: converter, API, guards, web input and the portal
+npm test                       # 161 tests: converter, API, guards, web input and the portal
 npm run epubcheck:install      # fetches EPUBCheck into tools/ (needs java + unzip)
 npm run diagrams:install       # optional: mermaid rendering (see Diagrams below)
 npm run skill:install          # optional: the agent skill, for Claude Code sessions

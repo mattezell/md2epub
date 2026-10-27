@@ -43,6 +43,30 @@ test('frontmatter: scalars resolve the YAML way, not as strict JSON', () => {
   assert.deepEqual(data, { series: null, book: 12, published: true, subtitle: null });
 });
 
+// Each level is ten references to the one before: a few hundred bytes that
+// stringify to hundreds of megabytes.
+const aliasBomb = (levels) => {
+  let yaml = 'a0: &a0 [x, x, x, x, x, x, x, x, x, x]\n';
+  for (let i = 1; i <= levels; i += 1) yaml += `a${i}: &a${i} [${Array(10).fill(`*a${i - 1}`).join(', ')}]\n`;
+  return `---\n${yaml}title: *a${levels}\nauthor: *a${levels}\n---\nbody`;
+};
+
+test('frontmatter: a YAML alias bomb is refused at parse time', () => {
+  const { data, warnings } = parseFrontmatter(aliasBomb(8));
+  // Not deepEqual: a failure message would print the expanded structure.
+  assert.equal(Object.keys(data).length, 0);
+  assert.equal(warnings.length, 1);
+});
+
+test('frontmatter: only scalars and flat lists of scalars become metadata', () => {
+  const nested = [['x', 'x'], ['x']];
+  const meta = metadataFromFrontmatter({ title: nested, author: ['A', nested, 'B'], tags: { a: 1 }, lang: 'en' });
+  assert.equal(meta.title, undefined);
+  assert.deepEqual(meta.authors, ['A', 'B']);
+  assert.equal(meta.subjects, undefined);
+  assert.equal(meta.language, 'en');
+});
+
 test('splitting: one file per level 1 heading, headings get stable ids', () => {
   const { chapters, toc, docTitle } = splitDocument('# One\n\na\n\n## Sub\n\nb\n\n# Two\n\nc');
   assert.equal(chapters.length, 2);

@@ -20,7 +20,10 @@ export function parseFrontmatter(source) {
   try {
     // CORE_SCHEMA in js-yaml 5 resolves scalars as JSON_SCHEMA did in 4 (no dates, no
     // custom tags); 5's JSON_SCHEMA is strict and would turn `~` and `True` into strings.
-    data = load(match[1], { schema: CORE_SCHEMA });
+    // Aliases are references, so a few hundred bytes of nested ones expand to
+    // hundreds of megabytes once anything stringifies them. Frontmatter has
+    // little use for them; a handful is plenty.
+    data = load(match[1], { schema: CORE_SCHEMA, maxAliases: 16 });
   } catch (err) {
     warnings.push(`Frontmatter is not valid YAML and was kept as body text: ${err.message.split('\n')[0]}`);
     return { data: {}, body: source, warnings };
@@ -33,17 +36,23 @@ export function parseFrontmatter(source) {
   return { data, body: source.slice(match[0].length), warnings };
 }
 
-const first = (obj, keys) => {
+// Metadata is text, so only scalars count. Stringifying a nested structure is
+// how a small document turns into a huge one.
+const isScalar = (value) => ['string', 'number', 'boolean'].includes(typeof value);
+const isFlatList = (value) => Array.isArray(value) && value.some(isScalar);
+
+const first = (obj, keys, { lists = false } = {}) => {
   for (const key of keys) {
     const value = obj[key];
-    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+    if (isScalar(value) && String(value).trim() !== '') return value;
+    if (lists && isFlatList(value)) return value;
   }
   return undefined;
 };
 
 const toList = (value) => {
   if (value === undefined) return [];
-  const list = Array.isArray(value) ? value : String(value).split(/\s*[,;]\s*/);
+  const list = Array.isArray(value) ? value.filter(isScalar) : String(value).split(/\s*[,;]\s*/);
   return list.map((v) => String(v).trim()).filter(Boolean);
 };
 
@@ -53,7 +62,7 @@ export function metadataFromFrontmatter(data) {
   const title = first(data, ['title', 'name']);
   if (title !== undefined) meta.title = String(title).trim();
 
-  const authors = toList(first(data, ['author', 'authors', 'creator', 'creators', 'by']));
+  const authors = toList(first(data, ['author', 'authors', 'creator', 'creators', 'by'], { lists: true }));
   if (authors.length) meta.authors = authors;
 
   const language = first(data, ['language', 'lang']);
@@ -74,7 +83,7 @@ export function metadataFromFrontmatter(data) {
   const date = first(data, ['date', 'published', 'pubdate']);
   if (date !== undefined) meta.date = String(date).trim();
 
-  const subjects = toList(first(data, ['subjects', 'tags', 'keywords', 'categories']));
+  const subjects = toList(first(data, ['subjects', 'tags', 'keywords', 'categories'], { lists: true }));
   if (subjects.length) meta.subjects = subjects;
 
   return meta;

@@ -29,6 +29,20 @@ test('frontmatter: broken YAML is kept as body instead of thrown away', () => {
   assert.equal(warnings.length, 1);
 });
 
+test('frontmatter: an empty or comment-only block is removed without a warning', () => {
+  for (const source of ['---\n\n---\nbody', '---\n# draft notes\n---\nbody']) {
+    const { data, body, warnings } = parseFrontmatter(source);
+    assert.deepEqual(data, {});
+    assert.equal(body, 'body');
+    assert.deepEqual(warnings, []);
+  }
+});
+
+test('frontmatter: scalars resolve the YAML way, not as strict JSON', () => {
+  const { data } = parseFrontmatter('---\nseries: ~\nbook: 012\npublished: True\nsubtitle:\n---\n');
+  assert.deepEqual(data, { series: null, book: 12, published: true, subtitle: null });
+});
+
 test('splitting: one file per level 1 heading, headings get stable ids', () => {
   const { chapters, toc, docTitle } = splitDocument('# One\n\na\n\n## Sub\n\nb\n\n# Two\n\nc');
   assert.equal(chapters.length, 2);

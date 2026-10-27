@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const run = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const toolsDir = join(root, 'tools');
-const VERSION = process.env.EPUBCHECK_VERSION || '5.3.0';
+const VERSION = process.env.EPUBCHECK_VERSION || '5.4.0';
 const url = `https://github.com/w3c/epubcheck/releases/download/v${VERSION}/epubcheck-${VERSION}.zip`;
 
 const target = join(toolsDir, `epubcheck-${VERSION}`, 'epubcheck.jar');

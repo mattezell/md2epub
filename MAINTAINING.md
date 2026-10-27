@@ -24,7 +24,7 @@ works from any directory.
 ## The loop that matters
 
 ```bash
-npm test                  # 157 tests, no network needed
+npm test                  # 159 tests, no network needed
 npm run validate          # every fixture through the real EPUBCheck
 ```
 

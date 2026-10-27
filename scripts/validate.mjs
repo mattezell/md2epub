@@ -23,7 +23,7 @@ export function findEpubcheck() {
   if (process.env.EPUBCHECK_JAR && existsSync(process.env.EPUBCHECK_JAR)) return process.env.EPUBCHECK_JAR;
   const toolsDir = join(root, 'tools');
   if (!existsSync(toolsDir)) return null;
-  for (const entry of ['epubcheck-5.3.0', 'epubcheck']) {
+  for (const entry of ['epubcheck-5.4.0', 'epubcheck']) {
     const candidate = join(toolsDir, entry, 'epubcheck.jar');
     if (existsSync(candidate)) return candidate;
   }

@@ -17,11 +17,21 @@ All notable changes to md2epub. The format follows
 ### Changed
 
 - Licence changed from MIT to Apache 2.0.
+- Dependencies brought current (2026-10-27), including three major versions:
+  nodemailer 10, `@hono/node-server` 2 and js-yaml 5. Frontmatter now parses
+  with js-yaml 5's `CORE_SCHEMA`, which resolves `~`, `True` and `012` the way
+  4's `JSON_SCHEMA` did; 5's own `JSON_SCHEMA` is strict and would have turned
+  them into strings.
+- EPUBCheck 5.4.0. It reports the NCX and the OPF 2 cover `meta` as outdated,
+  at usage level only; both stay, because Kindle still reads them.
+- CI actions: `checkout` v7, `setup-node` v7, `setup-java` v6.
 
 ### Fixed
 
 - README: the slim tier is selected with `MD2EPUB_TARGET=slim docker compose
   up`; the previous line was not valid Compose syntax. Test count corrected.
+- Empty or comment-only frontmatter is removed quietly again; js-yaml 5 throws
+  on a document with no content, which would have kept it as body text.
 
 ### Security
 
@@ -29,6 +39,9 @@ All notable changes to md2epub. The format follows
   `parseBody()` memory exhaustion through unbounded dot-notation nesting, which
   both API endpoints were exposed to; nodemailer's quadratic `addressparser`;
   js-yaml merge-key CPU exhaustion.
+- Patched four more (2026-10-27): markdown-it 15.0.3 fixes four quadratic-time
+  parsing paths that let a few hundred KB of Markdown block the event loop;
+  nodemailer 10.2.1; hono 4.13.14; `source-map-js` (transitive).
 
 ## [0.1.0] - 2026-08-25
 

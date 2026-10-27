@@ -1,6 +1,8 @@
-import yaml from 'js-yaml';
+import { load, CORE_SCHEMA } from 'js-yaml';
 
 const FENCE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+// js-yaml 5 throws on a document with no content, where 4 returned undefined.
+const NO_CONTENT = /^(?:[ \t]*(?:#.*)?(?:\r?\n|$))*$/;
 
 /**
  * Split leading YAML frontmatter off a Markdown document.
@@ -12,9 +14,13 @@ export function parseFrontmatter(source) {
   const match = FENCE.exec(source);
   if (!match) return { data: {}, body: source, warnings };
 
+  if (NO_CONTENT.test(match[1])) return { data: {}, body: source.slice(match[0].length), warnings };
+
   let data;
   try {
-    data = yaml.load(match[1], { schema: yaml.JSON_SCHEMA });
+    // CORE_SCHEMA in js-yaml 5 resolves scalars as JSON_SCHEMA did in 4 (no dates, no
+    // custom tags); 5's JSON_SCHEMA is strict and would turn `~` and `True` into strings.
+    data = load(match[1], { schema: CORE_SCHEMA });
   } catch (err) {
     warnings.push(`Frontmatter is not valid YAML and was kept as body text: ${err.message.split('\n')[0]}`);
     return { data: {}, body: source, warnings };

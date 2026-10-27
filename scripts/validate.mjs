@@ -57,6 +57,10 @@ const cases = [
   // heading ids and the nested table of contents.
   { name: fixtures, cover: false, label: 'all-as-one-bundle' },
 ];
+// Diagrams each fixture should render when the toolchain is present. The
+// diagrams fixture also has one deliberately broken diagram, which must not.
+const RENDERABLE_DIAGRAMS = { 'diagrams.md': 2 };
+const expectedDiagrams = (names) => names.reduce((sum, name) => sum + (RENDERABLE_DIAGRAMS[name] || 0), 0);
 const coverBytes = new Uint8Array(await readFile(join(fixturesDir, 'local-image.png')));
 
 // Diagram rendering needs a browser, so it is exercised only where the
@@ -95,6 +99,15 @@ for (const testCase of cases) {
     epubPath = join(outDir, `${label}.epub`);
     await writeFile(epubPath, result.bytes);
     process.stdout.write(`${label.padEnd(24)} ${String(result.documentCount).padStart(2)} doc ${String(result.chapterCount).padStart(2)} ch ${String(result.diagramCount).padStart(2)} dia ${String(Math.round(result.bytes.length / 1024)).padStart(4)} KB  `);
+    // A diagram that falls back to a code block still makes a valid book, so
+    // EPUBCheck alone would pass a toolchain that has stopped working.
+    const expected = expectedDiagrams(bundle ? testCase.name : [testCase.name]);
+    if (renderDiagram && result.diagramCount !== expected) {
+      console.log(`DIAGRAMS: rendered ${result.diagramCount}, expected ${expected}`);
+      for (const warning of result.warnings.filter((w) => w.includes('diagram'))) console.log(`  ${warning}`);
+      failures += 1;
+      continue;
+    }
   } catch (err) {
     console.log(`${label.padEnd(16)} CONVERSION FAILED: ${err.message}`);
     failures += 1;

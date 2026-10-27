@@ -34,6 +34,9 @@ with their commit so the history is readable.
   the API and from the portal (`1357972`, `d640f46`, 2026-09-11).
 - Patch three advisories in production dependencies (`f293e1f`, 2026-09-13).
 - Open sourced under Apache 2.0, with images published to GHCR (2026-09-14).
+- Dependencies current, four more advisories patched, EPUBCheck 5.4.0, mermaid
+  toolchain pinned, and a validate check that catches diagrams silently not
+  rendering (2026-10-27).
 
 ## Next, in the order worth taking
 
@@ -44,15 +47,21 @@ with their commit so the history is readable.
    covers, and drop the Chrome requirement for local installs too. Deliberately
    not done yet: it adds a native dependency and changes a cover path that has
    been verified on a real device, so it needs a device check before it ships.
-2. **Authentication.** Correct to omit on a private network, wrong anywhere
+2. **Move to mermaid-cli 12.** Pinned to 11 for now. 12 replaces `--width`
+   with `--size` (a cap on the larger side, not a width), moves to Mermaid 12
+   with new default themes and layouts, and embeds fonts in SVG output. It is
+   also the only fix for a low-severity KaTeX advisory in the toolchain. Needs
+   the flag change, a look at the rendered diagrams on a real Kindle, and the
+   pin moved in `scripts/install-mermaid.mjs` and the Dockerfile together.
+3. **Authentication.** Correct to omit on a private network, wrong anywhere
    else. The first item if the portal is ever exposed publicly.
-3. **Exercise the Worker path against live Resend.** `src/worker.js` and the
+4. **Exercise the Worker path against live Resend.** `src/worker.js` and the
    Resend mailer are stub tested only, and diagrams and cover rasterising cannot
    work on Workers at all (no browser).
-4. **A real SMTP send from a test.** Delivery is proven by use, not by the
+5. **A real SMTP send from a test.** Delivery is proven by use, not by the
    suite; `MAIL_TRANSPORT=log` is as far as tests go.
-5. **Footnotes and math.** Both are markdown-it plugins away.
-6. **The raw Karakeep list.** Bookmarks that were never crawled (X posts,
+6. **Footnotes and math.** Both are markdown-it plugins away.
+7. **The raw Karakeep list.** Bookmarks that were never crawled (X posts,
    paywalls) are skipped, and the count means readable articles. There is no
    way to ask for everything.
 

@@ -63,13 +63,13 @@ USER md2epub
 
 # ------------------------------------------------------------------------ full
 # The mermaid toolchain is around half a gigabyte, which is why it is a tier of
-# its own rather than the default.
+# its own rather than the default. Versions match scripts/install-mermaid.mjs.
 FROM default AS full
 USER root
 RUN mkdir -p /app/tools/mermaid \
     && cd /app/tools/mermaid \
     && echo '{"name":"md2epub-mermaid-toolchain","private":true}' > package.json \
-    && npm install --no-audit --no-fund --loglevel error @mermaid-js/mermaid-cli puppeteer \
+    && npm install --no-audit --no-fund --loglevel error '@mermaid-js/mermaid-cli@^11.17.0' 'puppeteer@^25' \
     && npm cache clean --force \
     && chown -R md2epub:md2epub /app/tools
 USER md2epub

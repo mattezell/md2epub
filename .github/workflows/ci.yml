@@ -56,6 +56,11 @@ jobs:
       - name: Install the mermaid toolchain
         run: npm run diagrams:install
 
+      # The live diagram tests skip themselves without the toolchain, so this
+      # is the only job where they run.
+      - name: Tests with diagrams rendered
+        run: npm test
+
       - run: npm run epubcheck:install
       - name: Validate with diagrams rendered
         run: npm run validate

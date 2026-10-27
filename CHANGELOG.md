@@ -24,6 +24,9 @@ All notable changes to md2epub. The format follows
   them into strings.
 - EPUBCheck 5.4.0. It reports the NCX and the OPF 2 cover `meta` as outdated,
   at usage level only; both stay, because Kindle still reads them.
+- The mermaid toolchain is pinned to mermaid-cli 11 in the installer and the
+  `full` image. Both installed whatever was latest, and mermaid-cli 12 (which
+  drops `--width`) would have shipped diagrams as code blocks.
 - CI actions: `checkout` v7, `setup-node` v7, `setup-java` v6.
 
 ### Fixed
@@ -32,6 +35,11 @@ All notable changes to md2epub. The format follows
   up`; the previous line was not valid Compose syntax. Test count corrected.
 - Empty or comment-only frontmatter is removed quietly again; js-yaml 5 throws
   on a document with no content, which would have kept it as body text.
+- `npm run validate` fails when the diagram toolchain is installed but a
+  fixture's diagrams did not render. A diagram that degrades to a code block
+  still makes a valid book, so EPUBCheck alone passed a broken toolchain. CI's
+  diagram job now runs the test suite as well, so the live diagram tests run
+  somewhere.
 
 ### Security
 
@@ -41,7 +49,9 @@ All notable changes to md2epub. The format follows
   js-yaml merge-key CPU exhaustion.
 - Patched four more (2026-10-27): markdown-it 15.0.3 fixes four quadratic-time
   parsing paths that let a few hundred KB of Markdown block the event loop;
-  nodemailer 10.2.1; hono 4.13.14; `source-map-js` (transitive).
+  nodemailer 10.2.1; hono 4.13.14; `source-map-js` (transitive). The mermaid
+  toolchain still carries a low-severity KaTeX advisory that only Mermaid 12
+  fixes.
 
 ## [0.1.0] - 2026-08-25
 

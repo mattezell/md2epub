@@ -15,6 +15,10 @@ import { findChrome, diagramSupport } from '../src/diagrams.js';
 const run = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const target = join(root, 'tools', 'mermaid');
+// Pinned to a major: mermaid-cli 12 renamed --width and changed the default
+// themes and layouts, and a floating install picked that up unannounced. The
+// Dockerfile's full stage installs the same specs.
+const PACKAGES = ['@mermaid-js/mermaid-cli@^11.17.0', 'puppeteer@^25'];
 
 const chrome = findChrome();
 if (!chrome) {
@@ -23,7 +27,7 @@ if (!chrome) {
   process.exit(1);
 }
 console.log(`Chrome     : ${chrome}`);
-console.log(`Installing : @mermaid-js/mermaid-cli and puppeteer into tools/mermaid`);
+console.log(`Installing : ${PACKAGES.join(' ')} into tools/mermaid`);
 console.log('This is around 500 MB on disk. Chromium itself is not downloaded.');
 
 await mkdir(target, { recursive: true });
@@ -36,7 +40,7 @@ await writeFile(join(target, 'package.json'), `${JSON.stringify({
 try {
   const { stdout, stderr } = await run(
     'npm',
-    ['install', '--no-fund', '--no-audit', '--loglevel', 'error', '@mermaid-js/mermaid-cli', 'puppeteer'],
+    ['install', '--no-fund', '--no-audit', '--loglevel', 'error', ...PACKAGES],
     {
       cwd: target,
       // Chromium would be a second browser on disk for no reason.
